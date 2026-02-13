@@ -61,13 +61,13 @@ func TestFilterTail(t *testing.T) {
 	assertLines(t, lines, got)
 }
 
-func TestFilterMid(t *testing.T) {
+func TestFilterEnds(t *testing.T) {
 	lines := make([]string, 100)
 	for i := range lines {
 		lines[i] = strings.Repeat("x", i)
 	}
 
-	got := FilterMid(lines, 10)
+	got := FilterEnds(lines, 10)
 	if len(got) != 21 { // 10 top + 1 marker + 10 bottom
 		t.Fatalf("expected 21 lines, got %d", len(got))
 	}
@@ -88,7 +88,7 @@ func TestFilterMid(t *testing.T) {
 	}
 
 	// 2*n >= len should return all
-	got = FilterMid(lines, 200)
+	got = FilterEnds(lines, 200)
 	assertLines(t, lines, got)
 }
 

@@ -134,7 +134,7 @@ func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
 		lines = FilterMaxLineLen(lines, opts.maxLineLen)
 	}
 	if opts.ends > 0 {
-		lines = FilterMid(lines, opts.ends)
+		lines = FilterEnds(lines, opts.ends)
 	}
 	if opts.head > 0 {
 		lines = FilterHead(lines, opts.head)

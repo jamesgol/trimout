@@ -51,8 +51,8 @@ func FilterTail(lines []string, n int) []string {
 	return lines[len(lines)-n:]
 }
 
-// FilterMid keeps first n/2 and last n/2 lines with an omission marker.
-func FilterMid(lines []string, n int) []string {
+// FilterEnds keeps the first n and last n lines with an omission marker.
+func FilterEnds(lines []string, n int) []string {
 	if 2*n >= len(lines) {
 		return lines
 	}
