@@ -1,4 +1,4 @@
-module github.com/james/pipesum
+module github.com/james/recap
 
 go 1.25.7
 

@@ -13,7 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const sessionFileName = ".pipesum-session"
+const sessionFileName = ".recap-session"
 
 // Stream prefixes in the annotated log file.
 const (
@@ -37,7 +37,7 @@ type CacheEntry struct {
 	Session     string
 }
 
-// detectSession reads the session ID from .pipesum-session in cwd,
+// detectSession reads the session ID from .recap-session in cwd,
 // walking up to the root. Returns empty string if not found.
 func detectSession() string {
 	dir, err := os.Getwd()
@@ -58,7 +58,7 @@ func detectSession() string {
 	return ""
 }
 
-// initSession creates a .pipesum-session file in the current directory.
+// initSession creates a .recap-session file in the current directory.
 // Returns the session ID (existing or newly created).
 func initSession() (string, error) {
 	existing := detectSession()
@@ -81,7 +81,7 @@ func cacheDir() string {
 	if cacheDirOverride != "" {
 		return cacheDirOverride
 	}
-	if dir := os.Getenv("PIPESUM_CACHE_DIR"); dir != "" {
+	if dir := os.Getenv("RECAP_CACHE_DIR"); dir != "" {
 		return dir
 	}
 	dir := os.Getenv("XDG_CACHE_HOME")
@@ -89,7 +89,7 @@ func cacheDir() string {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".cache")
 	}
-	return filepath.Join(dir, "pipesum")
+	return filepath.Join(dir, "recap")
 }
 
 func ensureCacheDir() error {
@@ -97,7 +97,7 @@ func ensureCacheDir() error {
 }
 
 func dbPath() string {
-	return filepath.Join(cacheDir(), "pipesum.db")
+	return filepath.Join(cacheDir(), "recap.db")
 }
 
 func openDB() (*sql.DB, error) {
