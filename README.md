@@ -66,10 +66,11 @@ pipesum clear [--older-than DURATION]
 | `--session ID` | Override session ID (default: auto-detect from .pipesum-session) |
 | `--stderr` | Show stderr instead of stdout |
 | `--combined` | Show both stdout and stderr |
+| `-q, --quiet` | Suppress output entirely (run mode: cache only) |
 
 ## Stream Selection
 
-When using `pipesum show`:
+When using `pipesum run` or `pipesum show`:
 
 - **Success (exit 0)**: shows stdout only (default)
 - **Failure (exit > 0)**: auto-shows combined stdout + stderr
@@ -133,30 +134,29 @@ This ensures `show last` and `list` are scoped to your session and won't collide
 with other concurrent Claude Code sessions.
 
 Always use `pipesum run` to execute commands instead of running them directly.
-pipesum captures stdout and stderr separately, caches the full unfiltered output,
-and records exit code, duration, and working directory. You can re-query cached
-output with different filters without re-running the command.
+pipesum caches the full unfiltered output (stdout and stderr separately) and
+records exit code, duration, and working directory. Use `--mid` to see only the
+beginning and end of output — the full output is always cached and you can
+retrieve more with `pipesum show last` if needed.
 
 ```bash
-# Instead of: make
-# Use:        pipesum run --mid 200 --strip-ansi -- make
+# Default for most commands — see first 30 + last 30 lines
+pipesum run --mid 60 --strip-ansi -- COMMAND
 
-# Instead of: pytest | tail -50
-# Use:        pipesum run --tail 50 --strip-ansi -- pytest
-
-# Instead of: grep ERROR in command output
-# Use:        pipesum run --grep ERROR --strip-ansi -- cmd
+# Examples
+pipesum run --mid 60 --strip-ansi -- make
+pipesum run --mid 60 --strip-ansi -- pytest
+pipesum run --mid 60 --strip-ansi -- cargo build
 ```
 
-Recommended default for most commands:
-  pipesum run --mid 200 --strip-ansi --compress-blank -- COMMAND
+If you need to see more of the output, NEVER re-run the command. Use:
+  pipesum show last --mid 200
+  pipesum show last --grep "error|warning"
+  pipesum show last --stderr
+  pipesum show last --tail 100
 
-If you need to see more of the output, don't re-run the command. Use:
-  pipesum show last [--head N | --tail N | --mid N | --grep PATTERN]
-  pipesum show last --stderr      # see only stderr
-  pipesum show last --combined    # see both streams
-
-`show` auto-includes stderr when the command failed (exit > 0).
+On failure (exit > 0), output auto-includes stderr. On success, only stdout
+is shown — stderr is cached but hidden to save tokens.
 
 Use `pipesum list` to see recent captures with exit codes and durations.
 ~~~

@@ -53,6 +53,7 @@ type filterOpts struct {
 	session      string
 	showStderr   bool
 	showCombined bool
+	quiet        bool
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -75,6 +76,8 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.StringVar(&opts.session, "session", "", "Session ID (default: auto-detect from .pipesum-session)")
 	fs.BoolVar(&opts.showStderr, "stderr", false, "Show stderr instead of stdout")
 	fs.BoolVar(&opts.showCombined, "combined", false, "Show both stdout and stderr")
+	fs.BoolVar(&opts.quiet, "quiet", false, "Suppress output (run mode: cache only, check exit code)")
+	fs.BoolVar(&opts.quiet, "q", false, "Suppress output (shorthand)")
 }
 
 // resolveSession returns the session ID from the flag or auto-detection.
@@ -233,7 +236,7 @@ func cmdRun(args []string) {
 		os.Exit(1)
 	}
 
-	// Read both streams concurrently, streaming to terminal and capturing
+	// Read both streams concurrently, capturing all output
 	var mu sync.Mutex
 	var annotatedLines []AnnotatedLine
 	var stdoutBuf, stderrBuf []byte
@@ -241,7 +244,7 @@ func cmdRun(args []string) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	readStream := func(r io.Reader, stream byte, dest *[]byte, out io.Writer) {
+	readStream := func(r io.Reader, stream byte, dest *[]byte) {
 		defer wg.Done()
 		scanner := bufio.NewScanner(r)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -252,12 +255,11 @@ func cmdRun(args []string) {
 			mu.Lock()
 			annotatedLines = append(annotatedLines, AnnotatedLine{Stream: stream, Text: line})
 			mu.Unlock()
-			fmt.Fprintln(out, line)
 		}
 	}
 
-	go readStream(stdoutPipe, streamOut, &stdoutBuf, os.Stdout)
-	go readStream(stderrPipe, streamErr, &stderrBuf, os.Stderr)
+	go readStream(stdoutPipe, streamOut, &stdoutBuf)
+	go readStream(stderrPipe, streamErr, &stderrBuf)
 
 	wg.Wait()
 	cmdErr := cmd.Wait()
@@ -293,6 +295,27 @@ func cmdRun(args []string) {
 		} else if opts.verbose {
 			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (stdout: %d lines, stderr: %d lines)\n", id, stdoutLineCount, stderrLineCount)
 		}
+	}
+
+	// Output filtered results (unless --quiet)
+	if !opts.quiet {
+		stream := resolveStream(&opts, exitCode)
+		var lines []string
+		switch stream {
+		case streamOut:
+			lines = splitLines(stdoutBuf)
+		case streamErr:
+			lines = splitLines(stderrBuf)
+		default: // combined
+			lines = DecodeAnnotated(EncodeAnnotatedLines(annotatedLines), 0)
+		}
+
+		totalLines := len(lines)
+		totalBytes := 0
+		for _, l := range lines {
+			totalBytes += len(l) + 1
+		}
+		outputFiltered(lines, &opts, totalLines, totalBytes)
 	}
 
 	os.Exit(exitCode)
