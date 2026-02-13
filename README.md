@@ -8,6 +8,8 @@ command | pipesum [filters] --> filtered output to stdout
                            \-> metadata indexed in SQLite
 ```
 
+Stdout and stderr are captured separately in an annotated log format that preserves interleave order. On playback, `show` defaults to stdout-only on success and auto-includes stderr when the command failed — giving the LLM exactly what it needs with minimal tokens.
+
 ## Install
 
 ```bash
@@ -23,7 +25,7 @@ go build -o pipesum .
 ## Usage
 
 ```bash
-# Run a command, cache output, apply filters (preferred — captures exit code, duration, cwd)
+# Run a command (preferred — captures exit code, duration, cwd, separate streams)
 pipesum run [OPTIONS] -- COMMAND [ARGS...]
 
 # Pipe mode — reads stdin, applies filters
@@ -62,6 +64,19 @@ pipesum clear [--older-than DURATION]
 | `--no-cache` | Skip caching the output |
 | `-v, --verbose` | Print cache ID to stderr |
 | `--session ID` | Override session ID (default: auto-detect from .pipesum-session) |
+| `--stderr` | Show stderr instead of stdout |
+| `--combined` | Show both stdout and stderr |
+
+## Stream Selection
+
+When using `pipesum show`:
+
+- **Success (exit 0)**: shows stdout only (default)
+- **Failure (exit > 0)**: auto-shows combined stdout + stderr
+- `--stderr`: show only stderr
+- `--combined`: show both streams regardless of exit code
+
+This saves tokens on success (stderr is usually noise) while automatically including error output on failure.
 
 ## Examples
 
@@ -72,15 +87,33 @@ pipesum run --dedup --mid 200 --strip-ansi -- make
 # Run tests, keep failures only
 pipesum run --grep "FAIL|ERROR" --stats -- pytest
 
-# Re-examine last capture with different filters
+# Re-examine last capture — stdout only
 pipesum show last --head 50
 
-# Pipe mode still works
+# See just stderr from last capture
+pipesum show last --stderr
+
+# See combined output preserving interleave order
+pipesum show last --combined
+
+# Pipe mode still works (captures as stdout, no exit code)
 cargo test 2>&1 | pipesum -t tests
 
-# List recent entries (shows exit code, duration, command)
+# List recent entries (shows exit code, stdout/stderr line counts, duration)
 pipesum list --last 5
 ```
+
+## Sessions
+
+Sessions prevent concurrent Claude Code instances from stepping on each other. When a `.pipesum-session` file exists, `show last` and `list` are automatically scoped to that session.
+
+```bash
+pipesum session init        # creates .pipesum-session in cwd
+pipesum list                # shows only this session's entries
+pipesum list --all          # shows entries from all sessions
+```
+
+The session file is auto-detected by walking up from the current directory.
 
 ## Claude Code Integration
 
@@ -94,9 +127,9 @@ This ensures `show last` and `list` are scoped to your session and won't collide
 with other concurrent Claude Code sessions.
 
 Always use `pipesum run` to execute commands instead of running them directly.
-pipesum caches the full unfiltered output and captures exit code, duration, and
-working directory. You can re-query cached output with different filters without
-re-running the command.
+pipesum captures stdout and stderr separately, caches the full unfiltered output,
+and records exit code, duration, and working directory. You can re-query cached
+output with different filters without re-running the command.
 
 ```bash
 # Instead of: make
@@ -114,6 +147,10 @@ Recommended default for most commands:
 
 If you need to see more of the output, don't re-run the command. Use:
   pipesum show last [--head N | --tail N | --mid N | --grep PATTERN]
+  pipesum show last --stderr      # see only stderr
+  pipesum show last --combined    # see both streams
+
+`show` auto-includes stderr when the command failed (exit > 0).
 
 Use `pipesum list` to see recent captures with exit codes and durations.
 ~~~
