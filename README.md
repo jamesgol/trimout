@@ -115,6 +115,12 @@ pipesum list --all          # shows entries from all sessions
 
 The session file is auto-detected by walking up from the current directory.
 
+## Configuration
+
+| Environment Variable | Description |
+|---------------------|-------------|
+| `PIPESUM_CACHE_DIR` | Override cache directory (default: `~/.cache/pipesum` or `$XDG_CACHE_HOME/pipesum`) |
+
 ## Claude Code Integration
 
 Add the following to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUDE.md` to teach Claude Code to use pipesum:

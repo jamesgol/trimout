@@ -81,6 +81,9 @@ func cacheDir() string {
 	if cacheDirOverride != "" {
 		return cacheDirOverride
 	}
+	if dir := os.Getenv("PIPESUM_CACHE_DIR"); dir != "" {
+		return dir
+	}
 	dir := os.Getenv("XDG_CACHE_HOME")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
