@@ -23,7 +23,10 @@ go build -o pipesum .
 ## Usage
 
 ```bash
-# Basic — reads stdin, applies filters, outputs to stdout
+# Run a command, cache output, apply filters (preferred — captures exit code, duration, cwd)
+pipesum run [OPTIONS] -- COMMAND [ARGS...]
+
+# Pipe mode — reads stdin, applies filters
 command | pipesum [OPTIONS]
 
 # Re-query cached output with different filters
@@ -58,17 +61,19 @@ pipesum clear [--older-than DURATION]
 ## Examples
 
 ```bash
-# Build output — dedup and trim for LLM context
-make 2>&1 | pipesum --dedup --mid 200 --strip-ansi
+# Run a build, dedup and trim for LLM context
+pipesum run --dedup --mid 200 --strip-ansi -- make
 
-# Test output — keep failures only
-pytest 2>&1 | pipesum --grep "FAIL|ERROR" --stats
+# Run tests, keep failures only
+pipesum run --grep "FAIL|ERROR" --stats -- pytest
 
 # Re-examine last capture with different filters
 pipesum show last --head 50
 
-# Tag a capture and list recent entries
+# Pipe mode still works
 cargo test 2>&1 | pipesum -t tests
+
+# List recent entries (shows exit code, duration, command)
 pipesum list --last 5
 ```
 
@@ -77,26 +82,29 @@ pipesum list --last 5
 Add the following to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUDE.md` to teach Claude Code to use pipesum:
 
 ~~~markdown
-## pipesum — always use for command output
+## pipesum — always use for command execution
 
-Always pipe command output through `pipesum` instead of using `head`, `tail`, or `grep` directly.
-pipesum caches the full unfiltered output so you can re-query it with different filters without
+Always use `pipesum run` to execute commands instead of running them directly.
+pipesum caches the full unfiltered output and captures exit code, duration, and
+working directory. You can re-query cached output with different filters without
 re-running the command.
 
 ```bash
-# Instead of: cmd | tail -50
-# Use:        cmd 2>&1 | pipesum --tail 50 --strip-ansi
+# Instead of: make
+# Use:        pipesum run --mid 200 --strip-ansi -- make
 
-# Instead of: cmd | head -20
-# Use:        cmd 2>&1 | pipesum --head 20 --strip-ansi
+# Instead of: pytest | tail -50
+# Use:        pipesum run --tail 50 --strip-ansi -- pytest
 
-# Instead of: cmd | grep ERROR
-# Use:        cmd 2>&1 | pipesum --grep ERROR --strip-ansi
+# Instead of: grep ERROR in command output
+# Use:        pipesum run --grep ERROR --strip-ansi -- cmd
 ```
 
 Recommended default for most commands:
-  cmd 2>&1 | pipesum --mid 200 --strip-ansi --compress-blank
+  pipesum run --mid 200 --strip-ansi --compress-blank -- COMMAND
 
-If you need to see more of the output, don't re-run the command. Use "last":
+If you need to see more of the output, don't re-run the command. Use:
   pipesum show last [--head N | --tail N | --mid N | --grep PATTERN]
+
+Use `pipesum list` to see recent captures with exit codes and durations.
 ~~~

@@ -16,7 +16,7 @@ func TestCacheWriteAndRead(t *testing.T) {
 	setupTestCache(t)
 
 	content := []byte("line1\nline2\nline3\n")
-	id, err := CacheWrite(content, 3, "test-cmd", "mytag")
+	id, err := CacheWrite(content, 3, CacheMeta{Command: "test-cmd", Tag: "mytag", ExitCode: -1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +56,8 @@ func TestCacheList(t *testing.T) {
 	}
 
 	// Add entries
-	CacheWrite([]byte("first\n"), 1, "", "tag1")
-	CacheWrite([]byte("second\n"), 1, "", "tag2")
+	CacheWrite([]byte("first\n"), 1, CacheMeta{Tag: "tag1", ExitCode: -1})
+	CacheWrite([]byte("second\n"), 1, CacheMeta{Tag: "tag2", ExitCode: -1})
 
 	entries, err = CacheList(10)
 	if err != nil {
@@ -88,8 +88,8 @@ func TestCacheList(t *testing.T) {
 func TestCacheClearAll(t *testing.T) {
 	setupTestCache(t)
 
-	CacheWrite([]byte("a\n"), 1, "", "")
-	CacheWrite([]byte("b\n"), 1, "", "")
+	CacheWrite([]byte("a\n"), 1, CacheMeta{ExitCode: -1})
+	CacheWrite([]byte("b\n"), 1, CacheMeta{ExitCode: -1})
 
 	n, err := CacheClear(0)
 	if err != nil {

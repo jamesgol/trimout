@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -12,6 +13,9 @@ import (
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "run":
+			cmdRun(os.Args[2:])
+			return
 		case "show":
 			cmdShow(os.Args[2:])
 			return
@@ -126,7 +130,8 @@ func cmdPipe(args []string) {
 
 	// Cache the raw output
 	if !opts.noCache {
-		id, cacheErr := CacheWrite(raw, originalLines, "", opts.tag)
+		meta := CacheMeta{Tag: opts.tag, ExitCode: -1}
+		id, cacheErr := CacheWrite(raw, originalLines, meta)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
 		} else if opts.verbose {
@@ -148,6 +153,86 @@ func cmdPipe(args []string) {
 	}
 
 	fmt.Print(output)
+}
+
+func cmdRun(args []string) {
+	// Split args at "--" into filter flags and command
+	var filterArgs, cmdArgs []string
+	for i, a := range args {
+		if a == "--" {
+			filterArgs = args[:i]
+			cmdArgs = args[i+1:]
+			break
+		}
+	}
+	if cmdArgs == nil {
+		fmt.Fprintf(os.Stderr, "pipesum run: missing command after --\n")
+		fmt.Fprintf(os.Stderr, "usage: pipesum run [OPTIONS] -- COMMAND [ARGS...]\n")
+		os.Exit(1)
+	}
+
+	fs := flag.NewFlagSet("pipesum run", flag.ExitOnError)
+	var opts filterOpts
+	addFilterFlags(fs, &opts)
+	fs.Parse(filterArgs)
+
+	workDir, _ := os.Getwd()
+
+	start := time.Now()
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	cmd.Stdin = os.Stdin
+	raw, err := cmd.CombinedOutput()
+	duration := time.Since(start)
+
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			fmt.Fprintf(os.Stderr, "pipesum run: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	content := string(raw)
+	content = strings.TrimSuffix(content, "\n")
+	lines := strings.Split(content, "\n")
+
+	originalLines := len(lines)
+	originalBytes := len(raw)
+
+	// Cache with full metadata
+	if !opts.noCache {
+		meta := CacheMeta{
+			Command:  strings.Join(cmdArgs, " "),
+			Tag:      opts.tag,
+			ExitCode: exitCode,
+			Duration: duration,
+			WorkDir:  workDir,
+		}
+		id, cacheErr := CacheWrite(raw, originalLines, meta)
+		if cacheErr != nil {
+			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
+		} else if opts.verbose {
+			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (%d lines, %d bytes)\n", id, originalLines, originalBytes)
+		}
+	}
+
+	filtered, ferr := applyFilters(lines, &opts)
+	if ferr != nil {
+		fmt.Fprintf(os.Stderr, "pipesum: %v\n", ferr)
+		os.Exit(1)
+	}
+
+	output := strings.Join(filtered, "\n") + "\n"
+
+	if opts.stats {
+		statsLine := StatsLine(originalLines, originalBytes, len(filtered), len(output))
+		fmt.Println(statsLine)
+	}
+
+	fmt.Print(output)
+	os.Exit(exitCode)
 }
 
 func cmdShow(args []string) {
@@ -208,9 +293,24 @@ func cmdList(args []string) {
 		return
 	}
 
-	fmt.Printf("%-28s %8s %6s %s\n", "ID", "SIZE", "LINES", "TAGS")
+	fmt.Printf("%-32s %5s %6s %8s %s\n", "ID", "EXIT", "LINES", "DURATION", "COMMAND")
 	for _, e := range entries {
-		fmt.Printf("%-28s %8d %6d %s\n", e.ID, e.Size, e.LineCount, e.Tags)
+		exit := "-"
+		if e.ExitCode >= 0 {
+			exit = fmt.Sprintf("%d", e.ExitCode)
+		}
+		dur := "-"
+		if e.Duration > 0 {
+			dur = e.Duration.Truncate(time.Millisecond).String()
+		}
+		cmd := e.Command
+		if cmd == "" {
+			cmd = "(pipe)"
+		}
+		if len(cmd) > 40 {
+			cmd = cmd[:37] + "..."
+		}
+		fmt.Printf("%-32s %5s %6d %8s %s\n", e.ID, exit, e.LineCount, dur, cmd)
 	}
 }
 

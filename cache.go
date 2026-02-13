@@ -19,6 +19,9 @@ type CacheEntry struct {
 	LineCount int
 	Hash      string
 	Tags      string
+	ExitCode  int
+	Duration  time.Duration
+	WorkDir   string
 }
 
 // cacheDirOverride allows tests to redirect cache to a temp directory.
@@ -59,11 +62,22 @@ func openDB() (*sql.DB, error) {
 		size INTEGER NOT NULL,
 		line_count INTEGER NOT NULL,
 		hash TEXT NOT NULL,
-		tags TEXT NOT NULL DEFAULT ''
+		tags TEXT NOT NULL DEFAULT '',
+		exit_code INTEGER NOT NULL DEFAULT -1,
+		duration_ms INTEGER NOT NULL DEFAULT 0,
+		work_dir TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
 		db.Close()
 		return nil, err
+	}
+	// Migrate older schemas
+	for _, col := range []string{
+		"exit_code INTEGER NOT NULL DEFAULT -1",
+		"duration_ms INTEGER NOT NULL DEFAULT 0",
+		"work_dir TEXT NOT NULL DEFAULT ''",
+	} {
+		db.Exec("ALTER TABLE captures ADD COLUMN " + col)
 	}
 	return db, nil
 }
@@ -73,9 +87,18 @@ func hashContent(data []byte) string {
 	return fmt.Sprintf("%x", h[:8])
 }
 
+// CacheMeta holds optional metadata for a cache write.
+type CacheMeta struct {
+	Command  string
+	Tag      string
+	ExitCode int
+	Duration time.Duration
+	WorkDir  string
+}
+
 // CacheWrite saves raw content to disk and records metadata in SQLite.
 // Returns the generated ID.
-func CacheWrite(raw []byte, lineCount int, command string, tag string) (string, error) {
+func CacheWrite(raw []byte, lineCount int, meta CacheMeta) (string, error) {
 	db, err := openDB()
 	if err != nil {
 		return "", err
@@ -91,9 +114,10 @@ func CacheWrite(raw []byte, lineCount int, command string, tag string) (string, 
 		return "", err
 	}
 
-	_, err = db.Exec(`INSERT INTO captures (id, timestamp, command, size, line_count, hash, tags)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, ts.Format(time.RFC3339), command, len(raw), lineCount, h, tag)
+	_, err = db.Exec(`INSERT INTO captures (id, timestamp, command, size, line_count, hash, tags, exit_code, duration_ms, work_dir)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, ts.Format(time.RFC3339), meta.Command, len(raw), lineCount, h, meta.Tag,
+		meta.ExitCode, meta.Duration.Milliseconds(), meta.WorkDir)
 	if err != nil {
 		os.Remove(rawPath)
 		return "", err
@@ -136,7 +160,7 @@ func CacheList(limit int) ([]CacheEntry, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT id, timestamp, command, size, line_count, hash, tags
+	rows, err := db.Query(`SELECT id, timestamp, command, size, line_count, hash, tags, exit_code, duration_ms, work_dir
 		FROM captures ORDER BY timestamp DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -147,10 +171,12 @@ func CacheList(limit int) ([]CacheEntry, error) {
 	for rows.Next() {
 		var e CacheEntry
 		var ts string
-		if err := rows.Scan(&e.ID, &ts, &e.Command, &e.Size, &e.LineCount, &e.Hash, &e.Tags); err != nil {
+		var durMs int64
+		if err := rows.Scan(&e.ID, &ts, &e.Command, &e.Size, &e.LineCount, &e.Hash, &e.Tags, &e.ExitCode, &durMs, &e.WorkDir); err != nil {
 			return nil, err
 		}
 		e.Timestamp, _ = time.Parse(time.RFC3339, ts)
+		e.Duration = time.Duration(durMs) * time.Millisecond
 		entries = append(entries, e)
 	}
 	return entries, nil
