@@ -40,6 +40,7 @@ type filterOpts struct {
 	stats        bool
 	tag          string
 	noCache      bool
+	verbose      bool
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -57,6 +58,8 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.StringVar(&opts.tag, "tag", "", "Tag this capture")
 	fs.StringVar(&opts.tag, "t", "", "Tag this capture (shorthand)")
 	fs.BoolVar(&opts.noCache, "no-cache", false, "Skip caching the output")
+	fs.BoolVar(&opts.verbose, "verbose", false, "Print cache ID to stderr")
+	fs.BoolVar(&opts.verbose, "v", false, "Print cache ID to stderr (shorthand)")
 }
 
 func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
@@ -126,7 +129,7 @@ func cmdPipe(args []string) {
 		id, cacheErr := CacheWrite(raw, originalLines, "", opts.tag)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
-		} else {
+		} else if opts.verbose {
 			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (%d lines, %d bytes)\n", id, originalLines, originalBytes)
 		}
 	}

@@ -84,7 +84,7 @@ func CacheWrite(raw []byte, lineCount int, command string, tag string) (string, 
 
 	h := hashContent(raw)
 	ts := time.Now().UTC()
-	id := ts.Format("20060102-150405") + "-" + h[:8]
+	id := fmt.Sprintf("%s-%s%04d", ts.Format("20060102-150405"), h[:8], ts.Nanosecond()/100000)
 
 	rawPath := filepath.Join(cacheDir(), id+".raw")
 	if err := os.WriteFile(rawPath, raw, 0o644); err != nil {
