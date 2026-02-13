@@ -52,6 +52,7 @@ pipesum clear [--older-than DURATION]
 | `--max-line-len N` | Truncate lines longer than N chars |
 | `--stats` | Prepend a summary line |
 | `-t, --tag TAG` | Tag this capture for later retrieval |
+| `--no-cache` | Skip caching the output |
 
 ## Examples
 
@@ -95,6 +96,9 @@ re-running the command.
 Recommended default for most commands:
   cmd 2>&1 | pipesum --mid 200 --strip-ansi --compress-blank
 
-If you need to see more of the output, don't re-run the command. Use:
+pipesum prints the cache ID to stderr after each capture, e.g.:
+  pipesum: cached as 20260213-073236-10cbd330 (1000 lines, 3893 bytes)
+
+If you need to see more of the output, don't re-run the command. Use the cache ID or "last":
   pipesum show last [--head N | --tail N | --mid N | --grep PATTERN]
 ~~~
