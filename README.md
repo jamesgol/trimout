@@ -69,3 +69,32 @@ pipesum show last --head 50
 cargo test 2>&1 | pipesum -t tests
 pipesum list --last 5
 ```
+
+## Claude Code Integration
+
+Add the following to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUDE.md` to teach Claude Code to use pipesum:
+
+~~~markdown
+## pipesum — always use for command output
+
+Always pipe command output through `pipesum` instead of using `head`, `tail`, or `grep` directly.
+pipesum caches the full unfiltered output so you can re-query it with different filters without
+re-running the command.
+
+```bash
+# Instead of: cmd | tail -50
+# Use:        cmd 2>&1 | pipesum --tail 50 --strip-ansi
+
+# Instead of: cmd | head -20
+# Use:        cmd 2>&1 | pipesum --head 20 --strip-ansi
+
+# Instead of: cmd | grep ERROR
+# Use:        cmd 2>&1 | pipesum --grep ERROR --strip-ansi
+```
+
+Recommended default for most commands:
+  cmd 2>&1 | pipesum --mid 200 --strip-ansi --compress-blank
+
+If you need to see more of the output, don't re-run the command. Use:
+  pipesum show last [--head N | --tail N | --mid N | --grep PATTERN]
+~~~
