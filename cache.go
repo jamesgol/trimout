@@ -58,7 +58,7 @@ func initSession() (string, error) {
 	}
 	id := fmt.Sprintf("%s-%s", time.Now().UTC().Format("20060102-150405"),
 		hashContent([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))[:8])
-	err := os.WriteFile(sessionFileName, []byte(id+"\n"), 0o644)
+	err := os.WriteFile(sessionFileName, []byte(id+"\n"), 0o600)
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +81,7 @@ func cacheDir() string {
 }
 
 func ensureCacheDir() error {
-	return os.MkdirAll(cacheDir(), 0o755)
+	return os.MkdirAll(cacheDir(), 0o700)
 }
 
 func dbPath() string {
@@ -154,7 +154,7 @@ func CacheWrite(raw []byte, lineCount int, meta CacheMeta) (string, error) {
 	id := fmt.Sprintf("%s-%s%04d", ts.Format("20060102-150405"), h[:8], ts.Nanosecond()/100000)
 
 	rawPath := filepath.Join(cacheDir(), id+".raw")
-	if err := os.WriteFile(rawPath, raw, 0o644); err != nil {
+	if err := os.WriteFile(rawPath, raw, 0o600); err != nil {
 		return "", err
 	}
 
