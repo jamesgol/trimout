@@ -25,7 +25,7 @@ func TestCacheWriteAndRead(t *testing.T) {
 	}
 
 	// Read back by ID
-	got, err := CacheRead(id)
+	got, err := CacheRead(id, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestCacheWriteAndRead(t *testing.T) {
 	}
 
 	// Read back by "last"
-	got, err = CacheRead("last")
+	got, err = CacheRead("last", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestCacheList(t *testing.T) {
 	setupTestCache(t)
 
 	// Empty list
-	entries, err := CacheList(10)
+	entries, err := CacheList(10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestCacheList(t *testing.T) {
 	CacheWrite([]byte("first\n"), 1, CacheMeta{Tag: "tag1", ExitCode: -1})
 	CacheWrite([]byte("second\n"), 1, CacheMeta{Tag: "tag2", ExitCode: -1})
 
-	entries, err = CacheList(10)
+	entries, err = CacheList(10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestCacheList(t *testing.T) {
 	}
 
 	// Limit
-	entries, err = CacheList(1)
+	entries, err = CacheList(1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestCacheClearAll(t *testing.T) {
 		t.Errorf("expected 2 cleared, got %d", n)
 	}
 
-	entries, _ := CacheList(10)
+	entries, _ := CacheList(10, "")
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries after clear, got %d", len(entries))
 	}
@@ -116,7 +116,7 @@ func TestCacheClearAll(t *testing.T) {
 func TestCacheReadNotFound(t *testing.T) {
 	setupTestCache(t)
 
-	_, err := CacheRead("nonexistent-id")
+	_, err := CacheRead("nonexistent-id", "")
 	if err == nil {
 		t.Error("expected error for nonexistent ID")
 	}
@@ -125,9 +125,54 @@ func TestCacheReadNotFound(t *testing.T) {
 func TestCacheReadLastEmpty(t *testing.T) {
 	setupTestCache(t)
 
-	_, err := CacheRead("last")
+	_, err := CacheRead("last", "")
 	if err == nil {
 		t.Error("expected error when no entries exist")
+	}
+}
+
+func TestSessionScoping(t *testing.T) {
+	setupTestCache(t)
+
+	// Write entries to different sessions
+	CacheWrite([]byte("session-a\n"), 1, CacheMeta{ExitCode: 0, Session: "sess-a"})
+	CacheWrite([]byte("session-b\n"), 1, CacheMeta{ExitCode: 0, Session: "sess-b"})
+	CacheWrite([]byte("no-session\n"), 1, CacheMeta{ExitCode: -1})
+
+	// List all (no session filter)
+	all, err := CacheList(10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(all))
+	}
+
+	// List scoped to sess-a
+	a, err := CacheList(10, "sess-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a) != 1 {
+		t.Fatalf("expected 1 entry for sess-a, got %d", len(a))
+	}
+
+	// "last" scoped to sess-a
+	data, err := CacheRead("last", "sess-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "session-a\n" {
+		t.Errorf("expected session-a content, got %q", data)
+	}
+
+	// "last" scoped to sess-b
+	data, err = CacheRead("last", "sess-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "session-b\n" {
+		t.Errorf("expected session-b content, got %q", data)
 	}
 }
 

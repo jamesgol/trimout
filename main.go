@@ -25,6 +25,9 @@ func main() {
 		case "clear":
 			cmdClear(os.Args[2:])
 			return
+		case "session":
+			cmdSession(os.Args[2:])
+			return
 		}
 	}
 	cmdPipe(os.Args[1:])
@@ -45,6 +48,7 @@ type filterOpts struct {
 	tag          string
 	noCache      bool
 	verbose      bool
+	session      string
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -64,6 +68,15 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.noCache, "no-cache", false, "Skip caching the output")
 	fs.BoolVar(&opts.verbose, "verbose", false, "Print cache ID to stderr")
 	fs.BoolVar(&opts.verbose, "v", false, "Print cache ID to stderr (shorthand)")
+	fs.StringVar(&opts.session, "session", "", "Session ID (default: auto-detect from .pipesum-session)")
+}
+
+// resolveSession returns the session ID from the flag or auto-detection.
+func resolveSession(opts *filterOpts) string {
+	if opts.session != "" {
+		return opts.session
+	}
+	return detectSession()
 }
 
 func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
@@ -130,7 +143,7 @@ func cmdPipe(args []string) {
 
 	// Cache the raw output
 	if !opts.noCache {
-		meta := CacheMeta{Tag: opts.tag, ExitCode: -1}
+		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(&opts)}
 		id, cacheErr := CacheWrite(raw, originalLines, meta)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
@@ -209,6 +222,7 @@ func cmdRun(args []string) {
 			ExitCode: exitCode,
 			Duration: duration,
 			WorkDir:  workDir,
+			Session:  resolveSession(&opts),
 		}
 		id, cacheErr := CacheWrite(raw, originalLines, meta)
 		if cacheErr != nil {
@@ -249,7 +263,7 @@ func cmdShow(args []string) {
 	addFilterFlags(fs, &opts)
 	fs.Parse(remainingArgs)
 
-	raw, err := CacheRead(id)
+	raw, err := CacheRead(id, resolveSession(&opts))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pipesum show: %v\n", err)
 		os.Exit(1)
@@ -280,9 +294,16 @@ func cmdShow(args []string) {
 func cmdList(args []string) {
 	fs := flag.NewFlagSet("pipesum list", flag.ExitOnError)
 	last := fs.Int("last", 20, "Number of entries to show")
+	allSessions := fs.Bool("all", false, "Show entries from all sessions")
+	session := fs.String("session", "", "Filter to specific session")
 	fs.Parse(args)
 
-	entries, err := CacheList(*last)
+	sess := *session
+	if sess == "" && !*allSessions {
+		sess = detectSession()
+	}
+
+	entries, err := CacheList(*last, sess)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pipesum list: %v\n", err)
 		os.Exit(1)
@@ -312,6 +333,26 @@ func cmdList(args []string) {
 		}
 		fmt.Printf("%-32s %5s %6d %8s %s\n", e.ID, exit, e.LineCount, dur, cmd)
 	}
+}
+
+func cmdSession(args []string) {
+	if len(args) > 0 && args[0] == "init" {
+		id, err := initSession()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pipesum session: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(id)
+		return
+	}
+
+	// Default: print current session
+	id := detectSession()
+	if id == "" {
+		fmt.Println("No active session. Run 'pipesum session init' to create one.")
+		os.Exit(1)
+	}
+	fmt.Println(id)
 }
 
 func cmdClear(args []string) {

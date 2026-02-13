@@ -32,8 +32,12 @@ command | pipesum [OPTIONS]
 # Re-query cached output with different filters
 pipesum show <id> [OPTIONS]
 
-# List cached entries
-pipesum list [--last N]
+# List cached entries (scoped to current session if .pipesum-session exists)
+pipesum list [--last N] [--all]
+
+# Manage sessions
+pipesum session init    # create .pipesum-session in cwd
+pipesum session         # print current session ID
 
 # Clear cache
 pipesum clear [--older-than DURATION]
@@ -57,6 +61,7 @@ pipesum clear [--older-than DURATION]
 | `-t, --tag TAG` | Tag this capture for later retrieval |
 | `--no-cache` | Skip caching the output |
 | `-v, --verbose` | Print cache ID to stderr |
+| `--session ID` | Override session ID (default: auto-detect from .pipesum-session) |
 
 ## Examples
 
@@ -83,6 +88,10 @@ Add the following to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUD
 
 ~~~markdown
 ## pipesum — always use for command execution
+
+At the start of each session, run `pipesum session init` to create a session file.
+This ensures `show last` and `list` are scoped to your session and won't collide
+with other concurrent Claude Code sessions.
 
 Always use `pipesum run` to execute commands instead of running them directly.
 pipesum caches the full unfiltered output and captures exit code, duration, and
