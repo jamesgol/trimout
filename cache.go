@@ -21,7 +21,13 @@ type CacheEntry struct {
 	Tags      string
 }
 
+// cacheDirOverride allows tests to redirect cache to a temp directory.
+var cacheDirOverride string
+
 func cacheDir() string {
+	if cacheDirOverride != "" {
+		return cacheDirOverride
+	}
 	dir := os.Getenv("XDG_CACHE_HOME")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
