@@ -53,7 +53,7 @@ recap clear [--older-than DURATION]
 | `--dedup-all` | Remove all duplicate lines, keeping first occurrence |
 | `--head N` | Keep first N lines |
 | `--tail N` | Keep last N lines |
-| `--mid N` | Keep first N and last N lines with omission marker |
+| `--ends N` | Keep first N and last N lines with omission marker |
 | `--grep PATTERN` | Keep only lines matching pattern |
 | `--grep-v PATTERN` | Remove lines matching pattern |
 | `--strip-ansi` | Remove ANSI escape codes |
@@ -83,7 +83,7 @@ This saves tokens on success (stderr is usually noise) while automatically inclu
 
 ```bash
 # Run a build, dedup and trim for LLM context
-recap run --dedup --mid 200 --strip-ansi -- make
+recap run --dedup --ends 200 --strip-ansi -- make
 
 # Run tests, keep failures only
 recap run --grep "FAIL|ERROR" --stats -- pytest
@@ -135,22 +135,22 @@ with other concurrent Claude Code sessions.
 
 Always use `recap run` to execute commands instead of running them directly.
 recap caches the full unfiltered output (stdout and stderr separately) and
-records exit code, duration, and working directory. Use `--mid` to see only the
+records exit code, duration, and working directory. Use `--ends` to see only the
 beginning and end of output — the full output is always cached and you can
 retrieve more with `recap show last` if needed.
 
 ```bash
 # Default for most commands — show first 30 + last 30 lines
-recap run --mid 30 --strip-ansi -- COMMAND
+recap run --ends 30 --strip-ansi -- COMMAND
 
 # Examples
-recap run --mid 30 --strip-ansi -- make
-recap run --mid 30 --strip-ansi -- pytest
-recap run --mid 30 --strip-ansi -- cargo build
+recap run --ends 30 --strip-ansi -- make
+recap run --ends 30 --strip-ansi -- pytest
+recap run --ends 30 --strip-ansi -- cargo build
 ```
 
 If you need to see more of the output, NEVER re-run the command. Use:
-  recap show last --mid 200
+  recap show last --ends 200
   recap show last --grep "error|warning"
   recap show last --stderr
   recap show last --tail 100

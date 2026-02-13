@@ -40,7 +40,7 @@ type filterOpts struct {
 	dedupAll     bool
 	head         int
 	tail         int
-	mid          int
+	ends         int
 	grep         string
 	grepV        string
 	stripAnsi    bool
@@ -61,7 +61,7 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.dedupAll, "dedup-all", false, "Remove all duplicate lines, keeping first")
 	fs.IntVar(&opts.head, "head", 0, "Keep first N lines")
 	fs.IntVar(&opts.tail, "tail", 0, "Keep last N lines")
-	fs.IntVar(&opts.mid, "mid", 0, "Keep first N and last N lines")
+	fs.IntVar(&opts.ends, "ends", 0, "Keep first N and last N lines")
 	fs.StringVar(&opts.grep, "grep", "", "Keep lines matching pattern")
 	fs.StringVar(&opts.grepV, "grep-v", "", "Remove lines matching pattern")
 	fs.BoolVar(&opts.stripAnsi, "strip-ansi", false, "Remove ANSI escape codes")
@@ -133,8 +133,8 @@ func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
 	if opts.maxLineLen > 0 {
 		lines = FilterMaxLineLen(lines, opts.maxLineLen)
 	}
-	if opts.mid > 0 {
-		lines = FilterMid(lines, opts.mid)
+	if opts.ends > 0 {
+		lines = FilterMid(lines, opts.ends)
 	}
 	if opts.head > 0 {
 		lines = FilterHead(lines, opts.head)
