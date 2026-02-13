@@ -53,16 +53,14 @@ func FilterTail(lines []string, n int) []string {
 
 // FilterMid keeps first n/2 and last n/2 lines with an omission marker.
 func FilterMid(lines []string, n int) []string {
-	if n >= len(lines) {
+	if 2*n >= len(lines) {
 		return lines
 	}
-	top := n / 2
-	bottom := n - top
-	omitted := len(lines) - top - bottom
-	out := make([]string, 0, n+1)
-	out = append(out, lines[:top]...)
+	omitted := len(lines) - 2*n
+	out := make([]string, 0, 2*n+1)
+	out = append(out, lines[:n]...)
 	out = append(out, fmt.Sprintf("[... %d lines omitted]", omitted))
-	out = append(out, lines[len(lines)-bottom:]...)
+	out = append(out, lines[len(lines)-n:]...)
 	return out
 }
 

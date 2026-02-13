@@ -68,26 +68,26 @@ func TestFilterMid(t *testing.T) {
 	}
 
 	got := FilterMid(lines, 10)
-	if len(got) != 11 { // 5 top + 1 marker + 5 bottom
-		t.Fatalf("expected 11 lines, got %d", len(got))
+	if len(got) != 21 { // 10 top + 1 marker + 10 bottom
+		t.Fatalf("expected 21 lines, got %d", len(got))
 	}
 	if got[0] != lines[0] {
 		t.Errorf("first line mismatch")
 	}
-	if got[4] != lines[4] {
-		t.Errorf("5th line mismatch")
+	if got[9] != lines[9] {
+		t.Errorf("10th line mismatch")
 	}
-	if !strings.Contains(got[5], "90 lines omitted") {
-		t.Errorf("expected omission marker, got %q", got[5])
+	if !strings.Contains(got[10], "80 lines omitted") {
+		t.Errorf("expected omission marker, got %q", got[10])
 	}
-	if got[6] != lines[95] {
+	if got[11] != lines[90] {
 		t.Errorf("first bottom line mismatch")
 	}
-	if got[10] != lines[99] {
+	if got[20] != lines[99] {
 		t.Errorf("last line mismatch")
 	}
 
-	// n >= len should return all
+	// 2*n >= len should return all
 	got = FilterMid(lines, 200)
 	assertLines(t, lines, got)
 }

@@ -53,7 +53,7 @@ recap clear [--older-than DURATION]
 | `--dedup-all` | Remove all duplicate lines, keeping first occurrence |
 | `--head N` | Keep first N lines |
 | `--tail N` | Keep last N lines |
-| `--mid N` | Keep first N/2 and last N/2 lines with omission marker |
+| `--mid N` | Keep first N and last N lines with omission marker |
 | `--grep PATTERN` | Keep only lines matching pattern |
 | `--grep-v PATTERN` | Remove lines matching pattern |
 | `--strip-ansi` | Remove ANSI escape codes |
@@ -140,13 +140,13 @@ beginning and end of output — the full output is always cached and you can
 retrieve more with `recap show last` if needed.
 
 ```bash
-# Default for most commands — see first 30 + last 30 lines
-recap run --mid 60 --strip-ansi -- COMMAND
+# Default for most commands — show first 30 + last 30 lines
+recap run --mid 30 --strip-ansi -- COMMAND
 
 # Examples
-recap run --mid 60 --strip-ansi -- make
-recap run --mid 60 --strip-ansi -- pytest
-recap run --mid 60 --strip-ansi -- cargo build
+recap run --mid 30 --strip-ansi -- make
+recap run --mid 30 --strip-ansi -- pytest
+recap run --mid 30 --strip-ansi -- cargo build
 ```
 
 If you need to see more of the output, NEVER re-run the command. Use:
