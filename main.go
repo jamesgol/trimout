@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,6 +51,8 @@ type filterOpts struct {
 	noCache      bool
 	verbose      bool
 	session      string
+	showStderr   bool
+	showCombined bool
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -69,6 +73,8 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.verbose, "verbose", false, "Print cache ID to stderr")
 	fs.BoolVar(&opts.verbose, "v", false, "Print cache ID to stderr (shorthand)")
 	fs.StringVar(&opts.session, "session", "", "Session ID (default: auto-detect from .pipesum-session)")
+	fs.BoolVar(&opts.showStderr, "stderr", false, "Show stderr instead of stdout")
+	fs.BoolVar(&opts.showCombined, "combined", false, "Show both stdout and stderr")
 }
 
 // resolveSession returns the session ID from the flag or auto-detection.
@@ -77,6 +83,21 @@ func resolveSession(opts *filterOpts) string {
 		return opts.session
 	}
 	return detectSession()
+}
+
+// resolveStream returns the stream filter byte based on flags and exit code.
+func resolveStream(opts *filterOpts, exitCode int) byte {
+	if opts.showCombined {
+		return 0
+	}
+	if opts.showStderr {
+		return streamErr
+	}
+	// Auto-include stderr on failure
+	if exitCode > 0 {
+		return 0
+	}
+	return streamOut
 }
 
 func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
@@ -121,38 +142,8 @@ func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
 	return lines, nil
 }
 
-func cmdPipe(args []string) {
-	fs := flag.NewFlagSet("pipesum", flag.ExitOnError)
-	var opts filterOpts
-	addFilterFlags(fs, &opts)
-	fs.Parse(args)
-
-	raw, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pipesum: error reading stdin: %v\n", err)
-		os.Exit(1)
-	}
-
-	content := string(raw)
-	// Remove trailing newline for splitting, we'll add it back on output
-	content = strings.TrimSuffix(content, "\n")
-	lines := strings.Split(content, "\n")
-
-	originalLines := len(lines)
-	originalBytes := len(raw)
-
-	// Cache the raw output
-	if !opts.noCache {
-		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(&opts)}
-		id, cacheErr := CacheWrite(raw, originalLines, meta)
-		if cacheErr != nil {
-			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
-		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (%d lines, %d bytes)\n", id, originalLines, originalBytes)
-		}
-	}
-
-	filtered, err := applyFilters(lines, &opts)
+func outputFiltered(lines []string, opts *filterOpts, originalLines, originalBytes int) {
+	filtered, err := applyFilters(lines, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pipesum: %v\n", err)
 		os.Exit(1)
@@ -166,6 +157,36 @@ func cmdPipe(args []string) {
 	}
 
 	fmt.Print(output)
+}
+
+func cmdPipe(args []string) {
+	fs := flag.NewFlagSet("pipesum", flag.ExitOnError)
+	var opts filterOpts
+	addFilterFlags(fs, &opts)
+	fs.Parse(args)
+
+	raw, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pipesum: error reading stdin: %v\n", err)
+		os.Exit(1)
+	}
+
+	stdoutLines := countLines(raw)
+	annotated := EncodeAnnotated(raw, nil)
+
+	// Cache
+	if !opts.noCache {
+		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(&opts)}
+		id, cacheErr := CacheWrite(annotated, len(raw), 0, stdoutLines, 0, meta)
+		if cacheErr != nil {
+			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
+		} else if opts.verbose {
+			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (%d lines, %d bytes)\n", id, stdoutLines, len(raw))
+		}
+	}
+
+	lines := splitLines(raw)
+	outputFiltered(lines, &opts, stdoutLines, len(raw))
 }
 
 func cmdRun(args []string) {
@@ -191,31 +212,73 @@ func cmdRun(args []string) {
 
 	workDir, _ := os.Getwd()
 
-	start := time.Now()
+	// Set up the command with separate stdout/stderr pipes
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	cmd.Stdin = os.Stdin
-	raw, err := cmd.CombinedOutput()
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pipesum run: %v\n", err)
+		os.Exit(1)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pipesum run: %v\n", err)
+		os.Exit(1)
+	}
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "pipesum run: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Read both streams concurrently, streaming to terminal and capturing
+	var mu sync.Mutex
+	var annotatedLines []AnnotatedLine
+	var stdoutBuf, stderrBuf []byte
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	readStream := func(r io.Reader, stream byte, dest *[]byte, out io.Writer) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			*dest = append(*dest, line...)
+			*dest = append(*dest, '\n')
+			mu.Lock()
+			annotatedLines = append(annotatedLines, AnnotatedLine{Stream: stream, Text: line})
+			mu.Unlock()
+			fmt.Fprintln(out, line)
+		}
+	}
+
+	go readStream(stdoutPipe, streamOut, &stdoutBuf, os.Stdout)
+	go readStream(stderrPipe, streamErr, &stderrBuf, os.Stderr)
+
+	wg.Wait()
+	cmdErr := cmd.Wait()
 	duration := time.Since(start)
 
 	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+	if cmdErr != nil {
+		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			fmt.Fprintf(os.Stderr, "pipesum run: %v\n", err)
+			fmt.Fprintf(os.Stderr, "pipesum run: %v\n", cmdErr)
 			os.Exit(1)
 		}
 	}
 
-	content := string(raw)
-	content = strings.TrimSuffix(content, "\n")
-	lines := strings.Split(content, "\n")
-
-	originalLines := len(lines)
-	originalBytes := len(raw)
+	stdoutLineCount := countLines(stdoutBuf)
+	stderrLineCount := countLines(stderrBuf)
 
 	// Cache with full metadata
 	if !opts.noCache {
+		annotated := EncodeAnnotatedLines(annotatedLines)
 		meta := CacheMeta{
 			Command:  strings.Join(cmdArgs, " "),
 			Tag:      opts.tag,
@@ -224,28 +287,14 @@ func cmdRun(args []string) {
 			WorkDir:  workDir,
 			Session:  resolveSession(&opts),
 		}
-		id, cacheErr := CacheWrite(raw, originalLines, meta)
+		id, cacheErr := CacheWrite(annotated, len(stdoutBuf), len(stderrBuf), stdoutLineCount, stderrLineCount, meta)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "pipesum: cache warning: %v\n", cacheErr)
 		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (%d lines, %d bytes)\n", id, originalLines, originalBytes)
+			fmt.Fprintf(os.Stderr, "pipesum: cached as %s (stdout: %d lines, stderr: %d lines)\n", id, stdoutLineCount, stderrLineCount)
 		}
 	}
 
-	filtered, ferr := applyFilters(lines, &opts)
-	if ferr != nil {
-		fmt.Fprintf(os.Stderr, "pipesum: %v\n", ferr)
-		os.Exit(1)
-	}
-
-	output := strings.Join(filtered, "\n") + "\n"
-
-	if opts.stats {
-		statsLine := StatsLine(originalLines, originalBytes, len(filtered), len(output))
-		fmt.Println(statsLine)
-	}
-
-	fmt.Print(output)
 	os.Exit(exitCode)
 }
 
@@ -263,32 +312,31 @@ func cmdShow(args []string) {
 	addFilterFlags(fs, &opts)
 	fs.Parse(remainingArgs)
 
-	raw, err := CacheRead(id, resolveSession(&opts))
+	session := resolveSession(&opts)
+
+	// Get entry metadata to know exit code for auto-stderr
+	entry, entryErr := CacheGetEntry(id, session)
+	exitCode := -1
+	if entryErr == nil {
+		exitCode = entry.ExitCode
+	}
+
+	raw, err := CacheReadLog(id, session)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pipesum show: %v\n", err)
 		os.Exit(1)
 	}
 
-	content := strings.TrimSuffix(string(raw), "\n")
-	lines := strings.Split(content, "\n")
+	stream := resolveStream(&opts, exitCode)
+	lines := DecodeAnnotated(raw, stream)
 
 	originalLines := len(lines)
-	originalBytes := len(raw)
-
-	filtered, err := applyFilters(lines, &opts)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pipesum show: %v\n", err)
-		os.Exit(1)
+	originalBytes := 0
+	for _, l := range lines {
+		originalBytes += len(l) + 1
 	}
 
-	output := strings.Join(filtered, "\n") + "\n"
-
-	if opts.stats {
-		statsLine := StatsLine(originalLines, originalBytes, len(filtered), len(output))
-		fmt.Println(statsLine)
-	}
-
-	fmt.Print(output)
+	outputFiltered(lines, &opts, originalLines, originalBytes)
 }
 
 func cmdList(args []string) {
@@ -314,7 +362,7 @@ func cmdList(args []string) {
 		return
 	}
 
-	fmt.Printf("%-32s %5s %6s %8s %s\n", "ID", "EXIT", "LINES", "DURATION", "COMMAND")
+	fmt.Printf("%-32s %5s %6s %6s %8s %s\n", "ID", "EXIT", "OUT", "ERR", "DURATION", "COMMAND")
 	for _, e := range entries {
 		exit := "-"
 		if e.ExitCode >= 0 {
@@ -331,7 +379,7 @@ func cmdList(args []string) {
 		if len(cmd) > 40 {
 			cmd = cmd[:37] + "..."
 		}
-		fmt.Printf("%-32s %5s %6d %8s %s\n", e.ID, exit, e.LineCount, dur, cmd)
+		fmt.Printf("%-32s %5s %6d %6d %8s %s\n", e.ID, exit, e.StdoutLines, e.StderrLines, dur, cmd)
 	}
 }
 
