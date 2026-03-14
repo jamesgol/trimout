@@ -4,6 +4,65 @@ import (
 	"testing"
 )
 
+func TestParseShellArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantCmd string
+		wantOk  bool
+	}{
+		{"simple -c", []string{"-c", "echo hello"}, "echo hello", true},
+		{"interactive -ic", []string{"-ic", "echo hello"}, "echo hello", true},
+		{"login -lc", []string{"-lc", "echo hello"}, "echo hello", true},
+		{"combined -ilc", []string{"-ilc", "echo hello"}, "echo hello", true},
+		{"combined -lic", []string{"-lic", "echo hello"}, "echo hello", true},
+		{"-sc", []string{"-sc", "echo hello"}, "echo hello", true},
+		{"no -c", []string{"-l"}, "", false},
+		{"no args", []string{}, "", false},
+		{"not a flag", []string{"run", "--", "make"}, "", false},
+		{"invalid flag with c", []string{"-xc", "echo hello"}, "", false},
+		{"double dash", []string{"--c", "echo hello"}, "", false},
+		{"complex command", []string{"-c", "cd /tmp && make | tail -50"}, "cd /tmp && make | tail -50", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, ok := parseShellArgs(tt.args)
+			if ok != tt.wantOk {
+				t.Errorf("parseShellArgs(%v) ok = %v, want %v", tt.args, ok, tt.wantOk)
+			}
+			if ok && cmd != tt.wantCmd {
+				t.Errorf("parseShellArgs(%v) cmd = %q, want %q", tt.args, cmd, tt.wantCmd)
+			}
+		})
+	}
+}
+
+func TestIsShellLoginFlag(t *testing.T) {
+	tests := []struct {
+		arg  string
+		want bool
+	}{
+		{"-l", true},
+		{"-i", true},
+		{"-il", true},
+		{"-li", true},
+		{"--login", true},
+		{"-c", false},
+		{"-ic", false},
+		{"-x", false},
+		{"--help", false},
+		{"run", false},
+		{"-", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.arg, func(t *testing.T) {
+			if got := isShellLoginFlag(tt.arg); got != tt.want {
+				t.Errorf("isShellLoginFlag(%q) = %v, want %v", tt.arg, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsTrimoutCommand(t *testing.T) {
 	tests := []struct {
 		cmd  string

@@ -16,6 +16,19 @@ import (
 )
 
 func main() {
+	// Handle shell-style invocations: -c, -ic, -lc, etc.
+	// Shells are invoked with -c "command" but tools may combine flags
+	// (e.g., bash -ic "command", bash -lc "command").
+	if cmd, ok := parseShellArgs(os.Args[1:]); ok {
+		runShell(cmd)
+		return
+	}
+
+	// Handle login/interactive flags without -c (shell probe)
+	if len(os.Args) > 1 && isShellLoginFlag(os.Args[1]) {
+		return
+	}
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "run":
@@ -32,17 +45,6 @@ func main() {
 			return
 		case "session":
 			cmdSession(os.Args[2:])
-			return
-		case "-c":
-			// Shell mode: trimout -c "command"
-			if len(os.Args) < 3 {
-				fmt.Fprintf(os.Stderr, "trimout: -c requires a command\n")
-				os.Exit(1)
-			}
-			runShell(os.Args[2])
-			return
-		case "-l", "--login", "-il", "-li":
-			// Shell login flags — ignore, exit cleanly
 			return
 		case "-h", "--help", "help":
 			printHelp()

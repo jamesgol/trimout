@@ -13,6 +13,64 @@ import (
 // No filtering by default — full output is shown. The value is the caching.
 var shellDefaults []string
 
+// parseShellArgs extracts the command from shell-style arguments.
+// Handles -c "cmd", -ic "cmd", -lc "cmd", -ilc "cmd", etc.
+// Returns the command string and true if -c was found.
+func parseShellArgs(args []string) (string, bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+
+	flag := args[0]
+	if !strings.HasPrefix(flag, "-") {
+		return "", false
+	}
+
+	// Strip leading dash
+	letters := flag[1:]
+
+	// Check if 'c' is in the flag letters
+	cIdx := strings.IndexByte(letters, 'c')
+	if cIdx < 0 {
+		return "", false
+	}
+
+	// All other letters must be valid shell flags (i, l, s)
+	for i, ch := range letters {
+		if i == cIdx {
+			continue
+		}
+		if ch != 'i' && ch != 'l' && ch != 's' {
+			return "", false
+		}
+	}
+
+	// -c requires a command argument
+	if len(args) < 2 {
+		fmt.Fprintf(os.Stderr, "trimout: -c requires a command\n")
+		os.Exit(1)
+	}
+
+	return args[1], true
+}
+
+// isShellLoginFlag returns true for flags shells receive when probed
+// (e.g., -l, -i, -il, --login).
+func isShellLoginFlag(arg string) bool {
+	if arg == "--login" {
+		return true
+	}
+	if !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+		return false
+	}
+	for _, ch := range arg[1:] {
+		if ch != 'i' && ch != 'l' {
+			return false
+		}
+	}
+	return len(arg) > 1
+}
+
 // runShell handles -c "command" invocations when trimout is used as SHELL.
 func runShell(command string) {
 	command = strings.TrimSpace(command)
