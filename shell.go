@@ -158,7 +158,7 @@ func rewriteInnerCommand(inner string) (string, bool) {
 	for _, f := range flags {
 		rewritten += " " + f
 	}
-	rewritten += " -- " + baseCmd
+	rewritten += " -- bash -c " + shellQuote(baseCmd)
 	return rewritten, true
 }
 
