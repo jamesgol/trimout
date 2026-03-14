@@ -57,7 +57,7 @@ type filterOpts struct {
 	quiet        bool
 	inputJSONL  string
 	inputText   string
-	outputJSONL bool
+	outputJSONL string
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -84,7 +84,7 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.quiet, "q", false, "Suppress output (shorthand)")
 	fs.StringVar(&opts.inputJSONL, "input-jsonl", "", "JSONL pattern file to match against")
 	fs.StringVar(&opts.inputText, "input-text", "", "Plain text pattern file (one literal per line)")
-	fs.BoolVar(&opts.outputJSONL, "output-jsonl", false, "Output pattern matches as JSONL")
+	fs.StringVar(&opts.outputJSONL, "output-jsonl", "", "Write pattern matches as JSONL to file (use - for stdout)")
 }
 
 // resolveSession returns the session ID from the flag or auto-detection.
@@ -172,13 +172,27 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 		os.Exit(1)
 	}
 
-	if opts.outputJSONL && compiled != nil {
+	if opts.outputJSONL != "" && compiled != nil {
 		matches := MatchAll(lines, compiled)
-		enc := json.NewEncoder(os.Stdout)
+		var w io.Writer
+		if opts.outputJSONL == "-" {
+			w = os.Stdout
+		} else {
+			f, ferr := os.Create(opts.outputJSONL)
+			if ferr != nil {
+				fmt.Fprintf(os.Stderr, "trimout: %v\n", ferr)
+				os.Exit(1)
+			}
+			defer f.Close()
+			w = f
+		}
+		enc := json.NewEncoder(w)
 		for _, m := range matches {
 			enc.Encode(m)
 		}
-		return
+		if opts.outputJSONL == "-" {
+			return
+		}
 	}
 
 	filtered, err := applyFilters(lines, opts, compiled)

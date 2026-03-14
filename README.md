@@ -119,7 +119,7 @@ trimout clear [--older-than DURATION]
 | `-q, --quiet` | Suppress output entirely (run mode: cache only) |
 | `--input-jsonl FILE` | JSONL pattern file to match against (see [Pattern Matching](#pattern-matching)) |
 | `--input-text FILE` | Plain text pattern file, one literal per line (see [Pattern Matching](#pattern-matching)) |
-| `--output-jsonl` | Output pattern matches as JSONL instead of plain text |
+| `--output-jsonl FILE` | Write pattern matches as JSONL to file (use `-` for stdout) |
 | `--session ID` | Override session ID (default: auto-detect from `.trimout-session`) |
 
 ---
@@ -185,10 +185,18 @@ Lines starting with `#` are comments. Blank lines are skipped.
 
 ### Output
 
-Literals are checked first (fast path), then regexes. By default, matching lines are printed as plain text. Use `--output-jsonl` to get structured match output:
+Literals are checked first (fast path), then regexes. By default, matching lines are printed as plain text.
+
+Use `--output-jsonl` to write structured matches to a file while still displaying filtered output on stdout:
 
 ```bash
-curl -s example.com | trimout --input-jsonl fingerprints.jsonl --output-jsonl
+curl -s example.com | trimout --input-jsonl fingerprints.jsonl --output-jsonl matches.jsonl
+```
+
+Use `-` to write JSONL to stdout instead (replaces the normal display output):
+
+```bash
+curl -s example.com | trimout --input-jsonl fingerprints.jsonl --output-jsonl -
 ```
 
 ```jsonl
