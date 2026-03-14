@@ -349,6 +349,38 @@ func TestCacheWriterAbort(t *testing.T) {
 	}
 }
 
+func TestShowByTag(t *testing.T) {
+	setupTestCache(t)
+
+	writeTestEntry(t, "tagged-output\n", "", CacheMeta{Tag: "build-1", ExitCode: 0, Session: "s1"})
+	writeTestEntry(t, "other-output\n", "", CacheMeta{Tag: "test-1", ExitCode: 0, Session: "s1"})
+
+	// Look up by tag
+	data, err := CacheReadLog("build-1", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := DecodeAnnotated(data, streamOut)
+	if len(lines) != 1 || lines[0] != "tagged-output" {
+		t.Errorf("expected tagged-output, got %v", lines)
+	}
+
+	// GetEntry by tag
+	entry, err := CacheGetEntry("build-1", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Tags != "build-1" {
+		t.Errorf("expected tag 'build-1', got %q", entry.Tags)
+	}
+
+	// Tag not found
+	_, err = CacheReadLog("nonexistent-tag", "s1")
+	if err == nil {
+		t.Error("expected error for nonexistent tag")
+	}
+}
+
 func TestHashContent(t *testing.T) {
 	h1 := hashContent([]byte("hello"))
 	h2 := hashContent([]byte("world"))

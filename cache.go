@@ -344,29 +344,23 @@ func (cw *CacheWriter) StdoutBytes() int { return cw.stdoutBytes }
 // CacheReadLog reads the annotated log for a given ID (or "last" for the most recent).
 // If session is non-empty, "last" is scoped to that session.
 func CacheReadLog(id string, session string) ([]byte, error) {
-	if id == "last" {
-		var err error
-		id, err = lastID(session)
-		if err != nil {
-			return nil, err
-		}
+	resolved, err := resolveID(id, session)
+	if err != nil {
+		return nil, err
 	}
 	// Try new .log format first, fall back to legacy .raw
-	data, err := os.ReadFile(filepath.Join(cacheDir(), id+".log"))
+	data, err := os.ReadFile(filepath.Join(cacheDir(), resolved+".log"))
 	if err != nil {
-		data, err = os.ReadFile(filepath.Join(cacheDir(), id+".raw"))
+		data, err = os.ReadFile(filepath.Join(cacheDir(), resolved+".raw"))
 	}
 	return data, err
 }
 
 // CacheGetEntry returns the metadata for a given ID.
 func CacheGetEntry(id string, session string) (*CacheEntry, error) {
-	if id == "last" {
-		var err error
-		id, err = lastID(session)
-		if err != nil {
-			return nil, err
-		}
+	resolved, err := resolveID(id, session)
+	if err != nil {
+		return nil, err
 	}
 	db, err := openDB()
 	if err != nil {
@@ -378,7 +372,7 @@ func CacheGetEntry(id string, session string) (*CacheEntry, error) {
 	var ts string
 	var durMs int64
 	err = db.QueryRow(`SELECT id, timestamp, command, stdout_size, stderr_size, stdout_lines, stderr_lines, hash, tags, exit_code, duration_ms, work_dir, session
-		FROM captures WHERE id = ?`, id).Scan(
+		FROM captures WHERE id = ?`, resolved).Scan(
 		&e.ID, &ts, &e.Command, &e.StdoutSize, &e.StderrSize, &e.StdoutLines, &e.StderrLines,
 		&e.Hash, &e.Tags, &e.ExitCode, &durMs, &e.WorkDir, &e.Session)
 	if err != nil {
@@ -387,6 +381,20 @@ func CacheGetEntry(id string, session string) (*CacheEntry, error) {
 	e.Timestamp, _ = time.Parse(time.RFC3339, ts)
 	e.Duration = time.Duration(durMs) * time.Millisecond
 	return &e, nil
+}
+
+// resolveID resolves "last", tag names, and literal IDs to a cache ID.
+// It tries in order: "last" keyword, exact ID match, then tag lookup.
+func resolveID(id string, session string) (string, error) {
+	if id == "last" {
+		return lastID(session)
+	}
+	// Check if it's a literal ID (file exists)
+	if _, err := os.Stat(filepath.Join(cacheDir(), id+".log")); err == nil {
+		return id, nil
+	}
+	// Try tag lookup — return most recent entry with this tag
+	return tagID(id, session)
 }
 
 func lastID(session string) (string, error) {
@@ -404,6 +412,25 @@ func lastID(session string) (string, error) {
 	}
 	if err != nil {
 		return "", fmt.Errorf("no cached entries found")
+	}
+	return id, nil
+}
+
+func tagID(tag string, session string) (string, error) {
+	db, err := openDB()
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+
+	var id string
+	if session != "" {
+		err = db.QueryRow(`SELECT id FROM captures WHERE tags = ? AND session = ? ORDER BY timestamp DESC LIMIT 1`, tag, session).Scan(&id)
+	} else {
+		err = db.QueryRow(`SELECT id FROM captures WHERE tags = ? ORDER BY timestamp DESC LIMIT 1`, tag).Scan(&id)
+	}
+	if err != nil {
+		return "", fmt.Errorf("no cached entry found for tag %q", tag)
 	}
 	return id, nil
 }
