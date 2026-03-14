@@ -56,7 +56,7 @@ type filterOpts struct {
 	showCombined bool
 	quiet        bool
 	patterns     string
-	patternsJSON bool
+	outputJSONL bool
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -82,7 +82,7 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.quiet, "quiet", false, "Suppress output (run mode: cache only, check exit code)")
 	fs.BoolVar(&opts.quiet, "q", false, "Suppress output (shorthand)")
 	fs.StringVar(&opts.patterns, "patterns", "", "JSONL file of patterns to match against")
-	fs.BoolVar(&opts.patternsJSON, "patterns-json", false, "Output pattern matches as JSON")
+	fs.BoolVar(&opts.outputJSONL, "output-jsonl", false, "Output pattern matches as JSONL")
 }
 
 // resolveSession returns the session ID from the flag or auto-detection.
@@ -167,7 +167,7 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 		os.Exit(1)
 	}
 
-	if opts.patternsJSON && compiled != nil {
+	if opts.outputJSONL && compiled != nil {
 		matches := MatchAll(lines, compiled)
 		enc := json.NewEncoder(os.Stdout)
 		for _, m := range matches {
