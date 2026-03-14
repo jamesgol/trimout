@@ -14,44 +14,59 @@ import (
 var shellDefaults []string
 
 // parseShellArgs extracts the command from shell-style arguments.
-// Handles -c "cmd", -ic "cmd", -lc "cmd", -ilc "cmd", etc.
+// Handles various invocation styles:
+//   - trimout -c "cmd"
+//   - trimout -ic "cmd"
+//   - trimout -c -l "cmd"     (Claude CLI snapshot call)
+//   - trimout -c -l -i "cmd"
+//
 // Returns the command string and true if -c was found.
 func parseShellArgs(args []string) (string, bool) {
 	if len(args) == 0 {
 		return "", false
 	}
 
-	flag := args[0]
-	if !strings.HasPrefix(flag, "-") {
-		return "", false
-	}
-
-	// Strip leading dash
-	letters := flag[1:]
-
-	// Check if 'c' is in the flag letters
-	cIdx := strings.IndexByte(letters, 'c')
-	if cIdx < 0 {
-		return "", false
-	}
-
-	// All other letters must be valid shell flags (i, l, s)
-	for i, ch := range letters {
-		if i == cIdx {
-			continue
-		}
-		if ch != 'i' && ch != 'l' && ch != 's' {
+	// First, check if any arg contains -c (combined or standalone)
+	foundC := false
+	for i, arg := range args {
+		if !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+			// Not a short flag — this is the command if we already found -c
+			if foundC {
+				return arg, true
+			}
 			return "", false
 		}
+
+		letters := arg[1:]
+
+		// Validate all letters are known shell flags
+		valid := true
+		for _, ch := range letters {
+			if ch != 'c' && ch != 'i' && ch != 'l' && ch != 's' {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			if foundC {
+				// Unknown flag after -c — treat as command
+				return arg, true
+			}
+			return "", false
+		}
+
+		if strings.ContainsRune(letters, 'c') {
+			foundC = true
+		}
+
+		// If this is the last arg and we found -c, there's no command
+		if i == len(args)-1 && foundC {
+			fmt.Fprintf(os.Stderr, "trimout: -c requires a command\n")
+			os.Exit(1)
+		}
 	}
 
-	// -c requires a command argument
-	if len(args) < 2 {
-		fmt.Fprintf(os.Stderr, "trimout: -c requires a command\n")
-		os.Exit(1)
-	}
-
-	return args[1], true
+	return "", false
 }
 
 // isShellLoginFlag returns true for flags shells receive when probed
