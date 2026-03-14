@@ -77,11 +77,11 @@ go build -o trimout .
 # Run a command (preferred — captures exit code, duration, cwd, separate streams)
 trimout run [OPTIONS] -- COMMAND [ARGS...]
 
-# Pipe mode — reads stdin and applies filters
+# Pipe mode — reads stdin and applies filters (streams when possible)
 command | trimout [OPTIONS]
 
 # Re-query cached output with different filters
-trimout show <id|last> [OPTIONS]
+trimout show <id|last|tag> [OPTIONS]
 
 # List cached entries
 trimout list [--last N] [--all]
@@ -93,6 +93,25 @@ trimout session         # print current session ID
 # Clear cache
 trimout clear [--older-than DURATION]
 ```
+
+### Shell mode
+
+trimout can act as a shell, automatically caching all command output:
+
+```bash
+# Use as shell directly
+trimout -c "make"
+trimout -c "pytest | tail -50"
+
+# Set as Claude Code's shell for automatic caching
+export CLAUDE_CODE_SHELL=/path/to/trimout
+```
+
+In shell mode:
+- All commands are wrapped with `trimout run` for automatic caching
+- Trailing `| tail -N`, `| head -N`, and `| grep PATTERN` are rewritten to native trimout flags
+- Full output is shown by default — no silent filtering
+- trimout's own commands (`trimout show`, `trimout list`, etc.) are passed through to bash
 
 ---
 
@@ -134,13 +153,17 @@ trimout run --ends 30 --strip-ansi -- make
 # Run tests, only show failures (99% token savings)
 trimout run --grep "FAIL|ERROR" --stats -- pytest
 
+# Tag a capture for easy retrieval later
+trimout run -t build --ends 30 -- make
+trimout show build --grep "warning"
+
 # Need more context? Re-query the cache — never re-run the command
 trimout show last --ends 100
 trimout show last --grep "warning"
 trimout show last --stderr
 trimout show last --tail 50
 
-# Pipe mode works too
+# Pipe mode works too (streams when possible)
 cargo test 2>&1 | trimout -t tests
 
 # List recent captures with exit codes and durations
@@ -243,30 +266,52 @@ This includes both stdout and stderr. Avoid using it with commands that may prin
 
 ## Claude Code Integration
 
-Add the following to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUDE.md`.
+### Option 1: Shell mode (recommended)
+
+Set trimout as Claude Code's shell. All commands are automatically cached with no changes to your workflow.
+
+Add to your `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_SHELL": "/path/to/trimout"
+  }
+}
+```
+
+Then add to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUDE.md`:
+
+~~~markdown
+## trimout — automatic command caching
+
+All commands are automatically cached by trimout. Full output is shown by default.
+
+If you need to re-examine previous output, **do not rerun the command**. Re-query the cache instead:
+
+```bash
+trimout show last --ends 100
+trimout show last --grep "error|warning"
+trimout show last --stderr
+trimout show last --tail 50
+```
+
+Use `trimout list` to see recent captures with exit codes and durations.
+~~~
+
+### Option 2: Explicit `trimout run`
+
+If you prefer not to change the shell, instruct Claude to use `trimout run` directly.
+
+Add to your `CLAUDE.md`:
 
 ~~~markdown
 ## trimout — always use for command execution
 
-At the start of each session, run:
-
-```bash
-trimout session init
-```
-
 Always use `trimout run` to execute commands instead of running them directly.
 
 ```bash
-# Default for most commands — show first 30 + last 30 lines
 trimout run --ends 30 --strip-ansi -- COMMAND
-```
-
-Examples:
-
-```bash
-trimout run --ends 30 --strip-ansi -- make
-trimout run --ends 30 --strip-ansi -- pytest
-trimout run --ends 30 --strip-ansi -- cargo build
 ```
 
 If you need to see more of the output, **do not rerun the command**. Re-query the cache instead:
@@ -277,8 +322,6 @@ trimout show last --grep "error|warning"
 trimout show last --stderr
 trimout show last --tail 50
 ```
-
-On success, only stdout is shown. On failure, stderr is automatically included. Full stdout and stderr are always cached.
 
 Use `trimout list` to see recent captures with exit codes and durations.
 ~~~
