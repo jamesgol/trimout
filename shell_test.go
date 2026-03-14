@@ -11,11 +11,16 @@ func TestIsTrimoutCommand(t *testing.T) {
 	}{
 		{"trimout show last", true},
 		{"trimout list", true},
+		{"trimout session init", true},
+		{"trimout clear --older-than 7d", true},
 		{"/usr/local/bin/trimout show last", true},
+		{"./trimout show last", true},
 		{"make", false},
 		{"bash -c 'trimout show last'", false},
 		{"echo trimout", false},
 		{"", false},
+		{"TRIMOUT_CACHE_DIR=/tmp trimout list", false}, // env prefix — not first word
+		{"grep trimout file.txt", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cmd, func(t *testing.T) {
@@ -41,6 +46,13 @@ func TestFindLastPipe(t *testing.T) {
 		{"multiple pipes", "a | b | c", 6},
 		{"pipe-and", "cmd1 |& cmd2", -1},
 		{"escaped pipe", `echo hello \| world`, -1},
+		{"pipe in subshell", "echo $(cmd1 | cmd2)", -1},
+		{"pipe in backticks", "echo `cmd1 | cmd2`", -1},
+		{"trailing pipe no rhs", "make |", 5},
+		{"pipe with or after", "a | b || c | d", 11},
+		{"only or operators", "cmd1 || cmd2 || cmd3", -1},
+		{"mixed quotes and pipe", `echo "hello" | grep 'world'`, 13},
+		{"empty string", "", -1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -67,6 +79,15 @@ func TestParseTrailerFlags(t *testing.T) {
 		{"sort", nil},
 		{"wc -l", nil},
 		{"tail", nil},
+		{"head", nil},
+		{"tail -f", nil},          // streaming tail, don't rewrite
+		{"grep -i error", nil},    // flags we don't handle yet, fall through safely
+		{"grep -v pattern", nil},  // same
+		{"grep", nil},             // bare grep, no pattern
+		{"tee output.log", nil},   // unrelated command
+		{"less", nil},             // pager
+		{"cat", nil},              // cat
+		{"tail -n +5", nil},       // tail from line 5, not simple -N
 	}
 	for _, tt := range tests {
 		t.Run(tt.trailer, func(t *testing.T) {
@@ -103,6 +124,14 @@ func TestDetectTrailingFilter(t *testing.T) {
 		{"unknown trailer", "make | sort", "", false},
 		{"pipe in quotes", "echo 'a | tail -5'", "", false},
 		{"multi-pipe with tail", "cmd1 | cmd2 | tail -10", "cmd1 | cmd2", true},
+		{"tail -f not rewritten", "make | tail -f", "", false},
+		{"empty command", "", "", false},
+		{"just a pipe", "|", "", false},
+		{"pipe with empty rhs", "make | ", "", false},
+		{"subshell pipe", "echo $(make | grep err) | tail -5", "echo $(make | grep err)", true},
+		{"grep with flags falls through", "make | grep -i error", "", false},
+		{"redirect before pipe", "make 2>&1 | tail -20", "make 2>&1", true},
+		{"complex lhs", "cd /tmp && make -j4 | head -10", "cd /tmp && make -j4", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

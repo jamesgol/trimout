@@ -114,6 +114,18 @@ func TestFilterMid(t *testing.T) {
 	assertLines(t, lines, got)
 }
 
+func TestFilterMidEmpty(t *testing.T) {
+	got := FilterMid(nil, 5)
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %v", got)
+	}
+
+	got = FilterMid([]string{}, 5)
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %v", got)
+	}
+}
+
 func TestFilterGrep(t *testing.T) {
 	lines := []string{"PASS test1", "FAIL test2", "ERROR test3", "PASS test4"}
 

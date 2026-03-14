@@ -80,7 +80,7 @@ func detectTrailingFilter(command string) (baseCmd string, flags []string, ok bo
 var (
 	tailRe = regexp.MustCompile(`^tail\s+-(\d+)$|^tail\s+-n\s+(\d+)$`)
 	headRe = regexp.MustCompile(`^head\s+-(\d+)$|^head\s+-n\s+(\d+)$`)
-	grepRe = regexp.MustCompile(`^grep\s+(.+)$`)
+	grepRe = regexp.MustCompile(`^grep\s+([^-]\S*)$|^grep\s+('[^']*')$|^grep\s+("[^"]*")$`)
 )
 
 // parseTrailerFlags converts a trailing command like "tail -50" into trimout flags.
@@ -100,7 +100,15 @@ func parseTrailerFlags(trailer string) []string {
 		return []string{"--head", n}
 	}
 	if m := grepRe.FindStringSubmatch(trailer); m != nil {
-		pattern := strings.TrimSpace(m[1])
+		// Find first non-empty capture group
+		pattern := ""
+		for _, g := range m[1:] {
+			if g != "" {
+				pattern = g
+				break
+			}
+		}
+		pattern = strings.TrimSpace(pattern)
 		// Strip surrounding quotes if present
 		if len(pattern) >= 2 {
 			if (pattern[0] == '"' && pattern[len(pattern)-1] == '"') ||
@@ -113,13 +121,15 @@ func parseTrailerFlags(trailer string) []string {
 	return nil
 }
 
-// findLastPipe returns the index of the last unquoted, non-|| pipe in command.
-// Returns -1 if not found.
+// findLastPipe returns the index of the last unquoted, non-||, non-subshell
+// pipe in command. Returns -1 if not found.
 func findLastPipe(command string) int {
 	lastPipe := -1
 	inSingle := false
 	inDouble := false
 	escaped := false
+	depth := 0     // nesting depth for $() and ()
+	inBacktick := false
 
 	for i := 0; i < len(command); i++ {
 		ch := command[i]
@@ -128,11 +138,11 @@ func findLastPipe(command string) int {
 			escaped = false
 			continue
 		}
-		if ch == '\\' {
+		if ch == '\\' && !inSingle {
 			escaped = true
 			continue
 		}
-		if ch == '\'' && !inDouble {
+		if ch == '\'' && !inDouble && !inBacktick {
 			inSingle = !inSingle
 			continue
 		}
@@ -140,7 +150,29 @@ func findLastPipe(command string) int {
 			inDouble = !inDouble
 			continue
 		}
-		if inSingle || inDouble {
+		if inSingle {
+			continue
+		}
+		if ch == '`' {
+			inBacktick = !inBacktick
+			continue
+		}
+		if inBacktick {
+			continue
+		}
+		// Track $() and () nesting
+		if ch == '(' {
+			depth++
+			continue
+		}
+		if ch == ')' && depth > 0 {
+			depth--
+			continue
+		}
+		if depth > 0 {
+			continue
+		}
+		if inDouble {
 			continue
 		}
 		if ch == '|' {

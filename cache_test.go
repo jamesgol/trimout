@@ -327,6 +327,35 @@ func TestCacheWriter(t *testing.T) {
 	}
 }
 
+func TestCacheWriterEmpty(t *testing.T) {
+	setupTestCache(t)
+
+	meta := CacheMeta{Tag: "empty-test", ExitCode: -1}
+	cw, err := CacheBegin(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Finalize with 0 lines
+	id, err := cw.Finalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cw.StdoutLines() != 0 {
+		t.Errorf("expected 0 lines, got %d", cw.StdoutLines())
+	}
+
+	// Should still be retrievable
+	data, err := CacheReadLog(id, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := DecodeAnnotated(data, streamOut)
+	if len(lines) != 0 {
+		t.Errorf("expected 0 lines, got %d", len(lines))
+	}
+}
+
 func TestCacheWriterAbort(t *testing.T) {
 	setupTestCache(t)
 
