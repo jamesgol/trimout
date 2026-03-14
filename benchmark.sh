@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RECAP="./recap"
+TRIMOUT="./trimout"
 
 # Build if needed
-if [ ! -f "$RECAP" ]; then
-    go build -o recap .
+if [ ! -f "$TRIMOUT" ]; then
+    go build -o trimout .
 fi
 
 # Approximate token count (~4 chars per token for English text)
@@ -29,7 +29,7 @@ bench() {
     local raw_bytes raw_lines filt filt_bytes filt_lines raw_tok filt_tok saved
     raw_bytes=${#input}
     raw_lines=$(echo "$input" | wc -l)
-    filt=$(echo "$input" | $RECAP --no-cache $flags)
+    filt=$(echo "$input" | $TRIMOUT --no-cache $flags)
     filt_bytes=${#filt}
     filt_lines=$(echo "$filt" | wc -l)
     raw_tok=$(tokens "$raw_bytes")

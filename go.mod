@@ -1,4 +1,4 @@
-module github.com/james/recap
+module github.com/james/trimout
 
 go 1.25.7
 

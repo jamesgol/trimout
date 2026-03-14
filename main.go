@@ -76,7 +76,7 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.noCache, "no-cache", false, "Skip caching the output")
 	fs.BoolVar(&opts.verbose, "verbose", false, "Print cache ID to stderr")
 	fs.BoolVar(&opts.verbose, "v", false, "Print cache ID to stderr (shorthand)")
-	fs.StringVar(&opts.session, "session", "", "Session ID (default: auto-detect from .recap-session)")
+	fs.StringVar(&opts.session, "session", "", "Session ID (default: auto-detect from .trimout-session)")
 	fs.BoolVar(&opts.showStderr, "stderr", false, "Show stderr instead of stdout")
 	fs.BoolVar(&opts.showCombined, "combined", false, "Show both stdout and stderr")
 	fs.BoolVar(&opts.quiet, "quiet", false, "Suppress output (run mode: cache only, check exit code)")
@@ -163,7 +163,7 @@ func applyFilters(lines []string, opts *filterOpts, compiled []CompiledPattern) 
 func outputFiltered(lines []string, opts *filterOpts, originalLines, originalBytes int) {
 	compiled, err := loadPatterns(opts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -178,7 +178,7 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 
 	filtered, err := applyFilters(lines, opts, compiled)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -193,14 +193,14 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 }
 
 func cmdPipe(args []string) {
-	fs := flag.NewFlagSet("recap", flag.ExitOnError)
+	fs := flag.NewFlagSet("trimout", flag.ExitOnError)
 	var opts filterOpts
 	addFilterFlags(fs, &opts)
 	fs.Parse(args)
 
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap: error reading stdin: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout: error reading stdin: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -212,9 +212,9 @@ func cmdPipe(args []string) {
 		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(&opts)}
 		id, cacheErr := CacheWrite(annotated, len(raw), 0, stdoutLines, 0, meta)
 		if cacheErr != nil {
-			fmt.Fprintf(os.Stderr, "recap: cache warning: %v\n", cacheErr)
+			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
 		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "recap: cached as %s (%d lines, %d bytes)\n", id, stdoutLines, len(raw))
+			fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n", id, stdoutLines, len(raw))
 		}
 	}
 
@@ -233,12 +233,12 @@ func cmdRun(args []string) {
 		}
 	}
 	if cmdArgs == nil {
-		fmt.Fprintf(os.Stderr, "recap run: missing command after --\n")
-		fmt.Fprintf(os.Stderr, "usage: recap run [OPTIONS] -- COMMAND [ARGS...]\n")
+		fmt.Fprintf(os.Stderr, "trimout run: missing command after --\n")
+		fmt.Fprintf(os.Stderr, "usage: trimout run [OPTIONS] -- COMMAND [ARGS...]\n")
 		os.Exit(1)
 	}
 
-	fs := flag.NewFlagSet("recap run", flag.ExitOnError)
+	fs := flag.NewFlagSet("trimout run", flag.ExitOnError)
 	var opts filterOpts
 	addFilterFlags(fs, &opts)
 	fs.Parse(filterArgs)
@@ -251,18 +251,18 @@ func cmdRun(args []string) {
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap run: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout run: %v\n", err)
 		os.Exit(1)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap run: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout run: %v\n", err)
 		os.Exit(1)
 	}
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "recap run: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout run: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -300,7 +300,7 @@ func cmdRun(args []string) {
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			fmt.Fprintf(os.Stderr, "recap run: %v\n", cmdErr)
+			fmt.Fprintf(os.Stderr, "trimout run: %v\n", cmdErr)
 			os.Exit(1)
 		}
 	}
@@ -321,9 +321,9 @@ func cmdRun(args []string) {
 		}
 		id, cacheErr := CacheWrite(annotated, len(stdoutBuf), len(stderrBuf), stdoutLineCount, stderrLineCount, meta)
 		if cacheErr != nil {
-			fmt.Fprintf(os.Stderr, "recap: cache warning: %v\n", cacheErr)
+			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
 		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "recap: cached as %s (stdout: %d lines, stderr: %d lines)\n", id, stdoutLineCount, stderrLineCount)
+			fmt.Fprintf(os.Stderr, "trimout: cached as %s (stdout: %d lines, stderr: %d lines)\n", id, stdoutLineCount, stderrLineCount)
 		}
 	}
 
@@ -353,14 +353,14 @@ func cmdRun(args []string) {
 
 func cmdShow(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "recap show: missing ID (use 'last' for most recent)\n")
+		fmt.Fprintf(os.Stderr, "trimout show: missing ID (use 'last' for most recent)\n")
 		os.Exit(1)
 	}
 
 	id := args[0]
 	remainingArgs := args[1:]
 
-	fs := flag.NewFlagSet("recap show", flag.ExitOnError)
+	fs := flag.NewFlagSet("trimout show", flag.ExitOnError)
 	var opts filterOpts
 	addFilterFlags(fs, &opts)
 	fs.Parse(remainingArgs)
@@ -376,7 +376,7 @@ func cmdShow(args []string) {
 
 	raw, err := CacheReadLog(id, session)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap show: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout show: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -393,7 +393,7 @@ func cmdShow(args []string) {
 }
 
 func cmdList(args []string) {
-	fs := flag.NewFlagSet("recap list", flag.ExitOnError)
+	fs := flag.NewFlagSet("trimout list", flag.ExitOnError)
 	last := fs.Int("last", 20, "Number of entries to show")
 	allSessions := fs.Bool("all", false, "Show entries from all sessions")
 	session := fs.String("session", "", "Filter to specific session")
@@ -406,7 +406,7 @@ func cmdList(args []string) {
 
 	entries, err := CacheList(*last, sess)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap list: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout list: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -440,7 +440,7 @@ func cmdSession(args []string) {
 	if len(args) > 0 && args[0] == "init" {
 		id, err := initSession()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "recap session: %v\n", err)
+			fmt.Fprintf(os.Stderr, "trimout session: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(id)
@@ -450,14 +450,14 @@ func cmdSession(args []string) {
 	// Default: print current session
 	id := detectSession()
 	if id == "" {
-		fmt.Println("No active session. Run 'recap session init' to create one.")
+		fmt.Println("No active session. Run 'trimout session init' to create one.")
 		os.Exit(1)
 	}
 	fmt.Println(id)
 }
 
 func cmdClear(args []string) {
-	fs := flag.NewFlagSet("recap clear", flag.ExitOnError)
+	fs := flag.NewFlagSet("trimout clear", flag.ExitOnError)
 	olderThan := fs.String("older-than", "", "Remove entries older than duration (e.g. 24h, 7d)")
 	fs.Parse(args)
 
@@ -474,7 +474,7 @@ func cmdClear(args []string) {
 			var err error
 			d, err = time.ParseDuration(s)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "recap clear: invalid duration %q: %v\n", *olderThan, err)
+				fmt.Fprintf(os.Stderr, "trimout clear: invalid duration %q: %v\n", *olderThan, err)
 				os.Exit(1)
 			}
 		}
@@ -482,7 +482,7 @@ func cmdClear(args []string) {
 
 	n, err := CacheClear(d)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "recap clear: %v\n", err)
+		fmt.Fprintf(os.Stderr, "trimout clear: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("Cleared %d entries.\n", n)

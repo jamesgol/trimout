@@ -172,7 +172,7 @@ func TestCacheClearAll(t *testing.T) {
 	// Log files should be removed
 	files, _ := os.ReadDir(cacheDir())
 	for _, f := range files {
-		if f.Name() != "recap.db" {
+		if f.Name() != "trimout.db" {
 			t.Errorf("unexpected file after clear: %s", f.Name())
 		}
 	}
