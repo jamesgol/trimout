@@ -10,7 +10,8 @@ import (
 )
 
 // shellDefaults are applied when no trailing filter is detected.
-var shellDefaults = []string{"--ends", "30", "--strip-ansi"}
+// No filtering by default — full output is shown. The value is the caching.
+var shellDefaults []string
 
 // runShell handles -c "command" invocations when trimout is used as SHELL.
 func runShell(command string) {
