@@ -84,6 +84,7 @@ type filterOpts struct {
 	showStderr   bool
 	showCombined bool
 	quiet        bool
+	noHint       bool
 	inputJSONL  string
 	inputText   string
 	outputJSONL string
@@ -112,6 +113,7 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.showCombined, "combined", false, "Show both stdout and stderr")
 	fs.BoolVar(&opts.quiet, "quiet", false, "Suppress output (run mode: cache only, check exit code)")
 	fs.BoolVar(&opts.quiet, "q", false, "Suppress output (shorthand)")
+	fs.BoolVar(&opts.noHint, "no-hint", false, "Suppress the stderr hint when output is filtered")
 	fs.StringVar(&opts.inputJSONL, "input-jsonl", "", "JSONL pattern file to match against")
 	fs.StringVar(&opts.inputText, "input-text", "", "Plain text pattern file (one literal per line)")
 	fs.StringVar(&opts.outputJSONL, "output-jsonl", "", "Write pattern matches as JSONL to file (use - for stdout)")
@@ -243,7 +245,7 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 
 	fmt.Print(output)
 
-	if len(filtered) < originalLines {
+	if !opts.noHint && len(filtered) < originalLines {
 		hint := fmt.Sprintf("[trimout] %d of %d lines shown.", len(filtered), originalLines)
 		if cacheID != "" {
 			hint += fmt.Sprintf(" Full output: trimout show %s", cacheID)
@@ -387,7 +389,7 @@ func cmdPipeStreaming(opts *filterOpts) {
 				fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n",
 					id, cw.StdoutLines(), cw.StdoutBytes())
 			}
-			if displayedLines < cw.StdoutLines() {
+			if !opts.noHint && displayedLines < cw.StdoutLines() {
 				fmt.Fprintf(os.Stderr, "[trimout] %d of %d lines shown. Full output: trimout show %s\n",
 					displayedLines, cw.StdoutLines(), id)
 			}
@@ -705,6 +707,7 @@ Pattern matching:
 Other options:
   -t, --tag TAG       Tag this capture for later retrieval
   --no-cache          Skip caching the output
+  --no-hint           Suppress the stderr hint when output is filtered
   -v, --verbose       Print cache ID to stderr
   --stderr            Show stderr instead of stdout
   --combined          Show both stdout and stderr

@@ -109,8 +109,12 @@ export CLAUDE_CODE_SHELL=/path/to/trimout
 
 In shell mode:
 - All commands are wrapped with `trimout run` for automatic caching
-- Trailing `| tail -N`, `| head -N`, and `| grep PATTERN` are rewritten to native trimout flags
+- Trailing `| tail -N`, `| head -N`, and `| grep PATTERN` are rewritten to native trimout flags, so the full pre-pipe output is cached
+- Commands inside `eval '...'` (used by Claude Code) are detected and rewritten too
+- Shell flags like `-c`, `-ic`, `-lc`, and `-c -l` are handled (matching how tools invoke shells)
 - Full output is shown by default — no silent filtering
+- When output is filtered, a stderr hint shows the cache ID:
+  `[trimout] 5 of 100 lines shown. Full output: trimout show <id>`
 - trimout's own commands (`trimout show`, `trimout list`, etc.) are passed through to bash
 
 ---
@@ -137,6 +141,7 @@ In shell mode:
 | `--stderr` | Show stderr instead of stdout |
 | `--combined` | Show both stdout and stderr |
 | `-q, --quiet` | Suppress output entirely (run mode: cache only) |
+| `--no-hint` | Suppress the stderr hint when output is filtered |
 | `--input-jsonl FILE` | JSONL pattern file to match against (see [Pattern Matching](#pattern-matching)) |
 | `--input-text FILE` | Plain text pattern file, one literal per line (see [Pattern Matching](#pattern-matching)) |
 | `--output-jsonl FILE` | Write pattern matches as JSONL to file (use `-` for stdout) |
@@ -268,7 +273,15 @@ This includes both stdout and stderr. Avoid using it with commands that may prin
 
 ### Option 1: Shell mode (recommended)
 
-Set trimout as Claude Code's shell. All commands are automatically cached with no changes to your workflow.
+Set trimout as Claude Code's shell. All commands are automatically cached — no CLAUDE.md instructions needed. When output is filtered, trimout prints a hint to stderr that Claude sees in the tool result:
+
+```
+[trimout] 50 of 397 lines shown. Full output: trimout show 20260314-191224-abc123
+```
+
+Claude picks up the cache ID from this hint and uses `trimout show` to retrieve more output without rerunning the command.
+
+**Setup:**
 
 Add to your `~/.claude/settings.json`:
 
@@ -280,23 +293,19 @@ Add to your `~/.claude/settings.json`:
 }
 ```
 
-Then add to your `~/.claude/CLAUDE.md` (global) or project-level `CLAUDE.md`:
+That's it. No CLAUDE.md changes are strictly required — the stderr hints teach Claude how to use trimout at runtime. But you can optionally add guidance:
 
 ~~~markdown
 ## trimout — automatic command caching
 
-All commands are automatically cached by trimout. Full output is shown by default.
-
-If you need to re-examine previous output, **do not rerun the command**. Re-query the cache instead:
+All commands are automatically cached by trimout. When output is filtered,
+stderr shows a hint with the cache ID. Use it to retrieve full output:
 
 ```bash
-trimout show last --ends 100
-trimout show last --grep "error|warning"
-trimout show last --stderr
-trimout show last --tail 50
+trimout show <id>                    # full output
+trimout show <id> --grep "error"     # search cached output
+trimout show <id> --stderr           # see stderr
 ```
-
-Use `trimout list` to see recent captures with exit codes and durations.
 ~~~
 
 ### Option 2: Explicit `trimout run`
@@ -314,13 +323,13 @@ Always use `trimout run` to execute commands instead of running them directly.
 trimout run --ends 30 --strip-ansi -- COMMAND
 ```
 
-If you need to see more of the output, **do not rerun the command**. Re-query the cache instead:
+If the output says `[trimout] N of M lines shown`, **do not rerun the command**.
+Use the cache ID from that message to retrieve more output:
 
 ```bash
-trimout show last --ends 100
-trimout show last --grep "error|warning"
-trimout show last --stderr
-trimout show last --tail 50
+trimout show <id> --ends 100
+trimout show <id> --grep "error|warning"
+trimout show <id> --stderr
 ```
 
 Use `trimout list` to see recent captures with exit codes and durations.
