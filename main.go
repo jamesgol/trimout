@@ -33,6 +33,14 @@ func main() {
 		case "session":
 			cmdSession(os.Args[2:])
 			return
+		case "-c":
+			// Shell mode: trimout -c "command"
+			if len(os.Args) < 3 {
+				fmt.Fprintf(os.Stderr, "trimout: -c requires a command\n")
+				os.Exit(1)
+			}
+			runShell(os.Args[2])
+			return
 		}
 	}
 	cmdPipe(os.Args[1:])
