@@ -44,6 +44,9 @@ func main() {
 		case "-l", "--login", "-il", "-li":
 			// Shell login flags — ignore, exit cleanly
 			return
+		case "-h", "--help", "help":
+			printHelp()
+			return
 		}
 	}
 
@@ -51,9 +54,7 @@ func main() {
 	if len(os.Args) <= 1 {
 		fi, _ := os.Stdin.Stat()
 		if fi != nil && fi.Mode()&os.ModeCharDevice != 0 {
-			fmt.Fprintf(os.Stderr, "usage: trimout run [OPTIONS] -- COMMAND\n")
-			fmt.Fprintf(os.Stderr, "       trimout -c \"command\"  (shell mode)\n")
-			fmt.Fprintf(os.Stderr, "       command | trimout [OPTIONS]\n")
+			fmt.Fprintf(os.Stderr, "trimout: no input. Run 'trimout --help' for usage.\n")
 			os.Exit(0)
 		}
 	}
@@ -636,4 +637,51 @@ func cmdClear(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Cleared %d entries.\n", n)
+}
+
+func printHelp() {
+	fmt.Print(`trimout — capture and cache stdout/stderr with smart filtering
+
+Usage:
+  trimout run [OPTIONS] -- COMMAND [ARGS...]   Run a command with caching
+  command | trimout [OPTIONS]                  Filter piped input
+  trimout show <id|last|tag> [OPTIONS]         Re-query cached output
+  trimout list [--last N] [--all]              List cached entries
+  trimout session init                         Create .trimout-session in cwd
+  trimout clear [--older-than DURATION]        Clear cache entries
+  trimout -c "command"                         Shell mode (for CLAUDE_CODE_SHELL)
+
+Filter options:
+  --ends N            Keep first N and last N lines
+  --mid N             Drop first N and last N lines, keep middle
+  --head N            Keep first N lines
+  --tail N            Keep last N lines
+  --grep PATTERN      Keep lines matching pattern
+  --grep-v PATTERN    Remove lines matching pattern
+  --dedup             Remove consecutive duplicate lines
+  --dedup-all         Remove all duplicate lines
+  --strip-ansi        Remove ANSI escape codes
+  --compress-blank    Collapse multiple blank lines
+  --max-line-len N    Truncate lines longer than N chars
+  --stats             Prepend a summary line
+
+Pattern matching:
+  --input-jsonl FILE  JSONL pattern file to match against
+  --input-text FILE   Plain text pattern file (one literal per line)
+  --output-jsonl FILE Write matches as JSONL (use - for stdout)
+
+Other options:
+  -t, --tag TAG       Tag this capture for later retrieval
+  --no-cache          Skip caching the output
+  -v, --verbose       Print cache ID to stderr
+  --stderr            Show stderr instead of stdout
+  --combined          Show both stdout and stderr
+  -q, --quiet         Suppress output
+  --session ID        Override session ID
+
+Shell mode:
+  Set CLAUDE_CODE_SHELL=/path/to/trimout to use as your shell.
+  All commands are cached automatically. Trailing | tail/head/grep
+  are rewritten to native trimout flags.
+`)
 }
