@@ -42,6 +42,7 @@ type filterOpts struct {
 	head         int
 	tail         int
 	ends         int
+	mid          int
 	grep         string
 	grepV        string
 	stripAnsi    bool
@@ -66,6 +67,7 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.IntVar(&opts.head, "head", 0, "Keep first N lines")
 	fs.IntVar(&opts.tail, "tail", 0, "Keep last N lines")
 	fs.IntVar(&opts.ends, "ends", 0, "Keep first N and last N lines")
+	fs.IntVar(&opts.mid, "mid", 0, "Drop first N and last N lines, keep the middle")
 	fs.StringVar(&opts.grep, "grep", "", "Keep lines matching pattern")
 	fs.StringVar(&opts.grepV, "grep-v", "", "Remove lines matching pattern")
 	fs.BoolVar(&opts.stripAnsi, "strip-ansi", false, "Remove ANSI escape codes")
@@ -155,6 +157,9 @@ func applyFilters(lines []string, opts *filterOpts, compiled []CompiledPattern) 
 	}
 	if opts.ends > 0 {
 		lines = FilterEnds(lines, opts.ends)
+	}
+	if opts.mid > 0 {
+		lines = FilterMid(lines, opts.mid)
 	}
 	if opts.head > 0 {
 		lines = FilterHead(lines, opts.head)

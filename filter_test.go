@@ -92,6 +92,27 @@ func TestFilterEnds(t *testing.T) {
 	assertLines(t, lines, got)
 }
 
+func TestFilterMid(t *testing.T) {
+	lines := []string{"a", "b", "c", "d", "e", "f", "g"}
+
+	got := FilterMid(lines, 2)
+	assertLines(t, []string{"c", "d", "e"}, got)
+
+	// Drop 1 from each end
+	got = FilterMid(lines, 1)
+	assertLines(t, []string{"b", "c", "d", "e", "f"}, got)
+
+	// n too large — nothing left
+	got = FilterMid(lines, 4)
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %v", got)
+	}
+
+	// n == 0 should not be called but returns all
+	got = FilterMid(lines, 0)
+	assertLines(t, lines, got)
+}
+
 func TestFilterGrep(t *testing.T) {
 	lines := []string{"PASS test1", "FAIL test2", "ERROR test3", "PASS test4"}
 

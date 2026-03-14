@@ -101,6 +101,7 @@ trimout clear [--older-than DURATION]
 | Flag | Description |
 |-----|-------------|
 | `--ends N` | Keep first N and last N lines with omission marker |
+| `--mid N` | Drop first N and last N lines, keep the middle |
 | `--head N` | Keep first N lines |
 | `--tail N` | Keep last N lines |
 | `--grep PATTERN` | Keep only lines matching pattern |

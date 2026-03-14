@@ -64,6 +64,14 @@ func FilterEnds(lines []string, n int) []string {
 	return out
 }
 
+// FilterMid keeps the middle of the output by dropping the first n and last n lines.
+func FilterMid(lines []string, n int) []string {
+	if 2*n >= len(lines) {
+		return nil
+	}
+	return lines[n : len(lines)-n]
+}
+
 // FilterGrep keeps only lines matching pattern.
 func FilterGrep(lines []string, pattern string) ([]string, error) {
 	re, err := regexp.Compile(pattern)
