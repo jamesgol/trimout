@@ -41,8 +41,23 @@ func main() {
 			}
 			runShell(os.Args[2])
 			return
+		case "-l", "--login", "-il", "-li":
+			// Shell login flags — ignore, exit cleanly
+			return
 		}
 	}
+
+	// No args and stdin is a terminal — not pipe mode, just exit
+	if len(os.Args) <= 1 {
+		fi, _ := os.Stdin.Stat()
+		if fi != nil && fi.Mode()&os.ModeCharDevice != 0 {
+			fmt.Fprintf(os.Stderr, "usage: trimout run [OPTIONS] -- COMMAND\n")
+			fmt.Fprintf(os.Stderr, "       trimout -c \"command\"  (shell mode)\n")
+			fmt.Fprintf(os.Stderr, "       command | trimout [OPTIONS]\n")
+			os.Exit(0)
+		}
+	}
+
 	cmdPipe(os.Args[1:])
 }
 
