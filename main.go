@@ -198,7 +198,7 @@ func applyFilters(lines []string, opts *filterOpts, compiled []CompiledPattern) 
 	return lines, nil
 }
 
-func outputFiltered(lines []string, opts *filterOpts, originalLines, originalBytes int) {
+func outputFiltered(lines []string, opts *filterOpts, originalLines, originalBytes int, cacheID string) {
 	compiled, err := loadPatterns(opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "trimout: %v\n", err)
@@ -242,6 +242,14 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 	}
 
 	fmt.Print(output)
+
+	if len(filtered) < originalLines {
+		hint := fmt.Sprintf("[trimout] %d of %d lines shown.", len(filtered), originalLines)
+		if cacheID != "" {
+			hint += fmt.Sprintf(" Full output: trimout show %s", cacheID)
+		}
+		fmt.Fprintln(os.Stderr, hint)
+	}
 }
 
 // canStream returns true when all active filters can operate line-by-line.
@@ -282,18 +290,22 @@ func cmdPipeBuffered(opts *filterOpts) {
 	annotated := EncodeAnnotated(raw, nil)
 
 	// Cache
+	var cacheID string
 	if !opts.noCache {
 		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(opts)}
 		id, cacheErr := CacheWrite(annotated, len(raw), 0, stdoutLines, 0, meta)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
-		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n", id, stdoutLines, len(raw))
+		} else {
+			cacheID = id
+			if opts.verbose {
+				fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n", id, stdoutLines, len(raw))
+			}
 		}
 	}
 
 	lines := splitLines(raw)
-	outputFiltered(lines, opts, stdoutLines, len(raw))
+	outputFiltered(lines, opts, stdoutLines, len(raw), cacheID)
 }
 
 func cmdPipeStreaming(opts *filterOpts) {
@@ -334,6 +346,7 @@ func cmdPipeStreaming(opts *filterOpts) {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	displayedLines := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -347,6 +360,7 @@ func cmdPipeStreaming(opts *filterOpts) {
 			if emit {
 				writer.WriteString(out)
 				writer.WriteByte('\n')
+				displayedLines++
 			}
 			if done {
 				break
@@ -368,9 +382,15 @@ func cmdPipeStreaming(opts *filterOpts) {
 		id, cacheErr := cw.Finalize()
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
-		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n",
-				id, cw.StdoutLines(), cw.StdoutBytes())
+		} else {
+			if opts.verbose {
+				fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n",
+					id, cw.StdoutLines(), cw.StdoutBytes())
+			}
+			if displayedLines < cw.StdoutLines() {
+				fmt.Fprintf(os.Stderr, "[trimout] %d of %d lines shown. Full output: trimout show %s\n",
+					displayedLines, cw.StdoutLines(), id)
+			}
 		}
 	}
 }
@@ -462,6 +482,7 @@ func cmdRun(args []string) {
 	stderrLineCount := countLines(stderrBuf)
 
 	// Cache with full metadata
+	var cacheID string
 	if !opts.noCache {
 		annotated := EncodeAnnotatedLines(annotatedLines)
 		meta := CacheMeta{
@@ -475,8 +496,11 @@ func cmdRun(args []string) {
 		id, cacheErr := CacheWrite(annotated, len(stdoutBuf), len(stderrBuf), stdoutLineCount, stderrLineCount, meta)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
-		} else if opts.verbose {
-			fmt.Fprintf(os.Stderr, "trimout: cached as %s (stdout: %d lines, stderr: %d lines)\n", id, stdoutLineCount, stderrLineCount)
+		} else {
+			cacheID = id
+			if opts.verbose {
+				fmt.Fprintf(os.Stderr, "trimout: cached as %s (stdout: %d lines, stderr: %d lines)\n", id, stdoutLineCount, stderrLineCount)
+			}
 		}
 	}
 
@@ -498,7 +522,7 @@ func cmdRun(args []string) {
 		for _, l := range lines {
 			totalBytes += len(l) + 1
 		}
-		outputFiltered(lines, &opts, totalLines, totalBytes)
+		outputFiltered(lines, &opts, totalLines, totalBytes, cacheID)
 	}
 
 	os.Exit(exitCode)
@@ -533,6 +557,12 @@ func cmdShow(args []string) {
 		os.Exit(1)
 	}
 
+	// Use resolved ID for the hint (entry.ID if available, otherwise the input)
+	showID := id
+	if entryErr == nil {
+		showID = entry.ID
+	}
+
 	stream := resolveStream(&opts, exitCode)
 	lines := DecodeAnnotated(raw, stream)
 
@@ -542,7 +572,7 @@ func cmdShow(args []string) {
 		originalBytes += len(l) + 1
 	}
 
-	outputFiltered(lines, &opts, originalLines, originalBytes)
+	outputFiltered(lines, &opts, originalLines, originalBytes, showID)
 }
 
 func cmdList(args []string) {
