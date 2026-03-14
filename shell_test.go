@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -168,6 +169,156 @@ func TestParseTrailerFlags(t *testing.T) {
 				if got[i] != tt.want[i] {
 					t.Errorf("parseTrailerFlags(%q)[%d] = %q, want %q", tt.trailer, i, got[i], tt.want[i])
 				}
+			}
+		})
+	}
+}
+
+func TestExtractEval(t *testing.T) {
+	tests := []struct {
+		name       string
+		cmd        string
+		wantInner  string
+		wantPrefix string
+		wantSuffix string
+		wantOk     bool
+	}{
+		{
+			"claude cli pattern",
+			"source /tmp/snap.sh && shopt -s nullglob; eval 'make -j4 | tail -50' < /dev/null && pwd >| /tmp/cwd",
+			"make -j4 | tail -50",
+			"source /tmp/snap.sh && shopt -s nullglob; ",
+			" < /dev/null && pwd >| /tmp/cwd",
+			true,
+		},
+		{
+			"simple eval",
+			"eval 'echo hello'",
+			"echo hello",
+			"",
+			"",
+			true,
+		},
+		{
+			"no eval",
+			"make | tail -5",
+			"",
+			"",
+			"",
+			false,
+		},
+		{
+			"eval with no closing quote",
+			"eval 'unterminated",
+			"",
+			"",
+			"",
+			false,
+		},
+		{
+			"eval with empty command",
+			"eval ''",
+			"",
+			"",
+			"",
+			true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inner, prefix, suffix, ok := extractEval(tt.cmd)
+			if ok != tt.wantOk {
+				t.Errorf("extractEval(%q) ok = %v, want %v", tt.cmd, ok, tt.wantOk)
+				return
+			}
+			if !ok {
+				return
+			}
+			if inner != tt.wantInner {
+				t.Errorf("inner = %q, want %q", inner, tt.wantInner)
+			}
+			if prefix != tt.wantPrefix {
+				t.Errorf("prefix = %q, want %q", prefix, tt.wantPrefix)
+			}
+			if suffix != tt.wantSuffix {
+				t.Errorf("suffix = %q, want %q", suffix, tt.wantSuffix)
+			}
+		})
+	}
+}
+
+func TestRewriteCommand(t *testing.T) {
+	tests := []struct {
+		name   string
+		cmd    string
+		wantOk bool
+		// We just check that it contains key parts, not exact string
+		wantContains []string
+	}{
+		{
+			"top level tail",
+			"make | tail -50",
+			true,
+			[]string{"trimout", "run", "--tail", "50", "make"},
+		},
+		{
+			"eval with tail",
+			"source snap.sh && eval 'make | tail -50' < /dev/null",
+			true,
+			[]string{"source snap.sh", "eval '", "trimout", "run", "--tail", "50", "make", "< /dev/null"},
+		},
+		{
+			"eval with grep",
+			"eval 'pytest | grep FAIL'",
+			true,
+			[]string{"eval '", "trimout", "run", "--grep", "FAIL", "pytest"},
+		},
+		{
+			"eval no pipe wraps with trimout run",
+			"eval 'make -j4'",
+			true,
+			[]string{"eval '", "trimout run"},
+		},
+		{
+			"no pipe no eval",
+			"make -j4",
+			false,
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, ok := rewriteCommand(tt.cmd)
+			if ok != tt.wantOk {
+				t.Errorf("rewriteCommand(%q) ok = %v, want %v", tt.cmd, ok, tt.wantOk)
+				return
+			}
+			if !ok {
+				return
+			}
+			for _, s := range tt.wantContains {
+				if !strings.Contains(result, s) {
+					t.Errorf("rewriteCommand(%q) = %q, missing %q", tt.cmd, result, s)
+				}
+			}
+		})
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"simple", "'simple'"},
+		{"with space", "'with space'"},
+		{"can't", "'can'\\''t'"},
+		{"", "''"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := shellQuote(tt.input); got != tt.want {
+				t.Errorf("shellQuote(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

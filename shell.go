@@ -99,20 +99,106 @@ func runShell(command string) {
 		return
 	}
 
-	// Try to detect and rewrite trailing pipe to tail/head/grep
-	if baseCmd, flags, ok := detectTrailingFilter(command); ok {
-		args := []string{"run"}
-		args = append(args, flags...)
-		args = append(args, "--", "bash", "-c", baseCmd)
-		runSelf(args)
+	// Try to rewrite the command for caching
+	if rewritten, ok := rewriteCommand(command); ok {
+		execBash(rewritten)
 		return
 	}
 
-	// Default: wrap with sensible defaults
+	// Default: wrap with trimout run
 	args := []string{"run"}
 	args = append(args, shellDefaults...)
 	args = append(args, "--", "bash", "-c", command)
 	runSelf(args)
+}
+
+// rewriteCommand tries to rewrite a command for caching.
+// It handles both top-level pipes and pipes inside eval '...'.
+func rewriteCommand(command string) (string, bool) {
+	// Check for eval 'USER_CMD' pattern (Claude CLI wraps commands this way)
+	if inner, prefix, suffix, ok := extractEval(command); ok {
+		if rewritten, rok := rewriteInnerCommand(inner); rok {
+			// Put the rewritten command back inside eval
+			return prefix + "eval '" + escapeEvalSingle(rewritten) + "'" + suffix, true
+		}
+		// Eval found but no rewritable pipe — wrap the inner command with trimout run
+		wrapped := "trimout run -- bash -c " + shellQuote(inner)
+		return prefix + "eval '" + escapeEvalSingle(wrapped) + "'" + suffix, true
+	}
+
+	// Top-level pipe rewriting (no eval wrapper)
+	if baseCmd, flags, ok := detectTrailingFilter(command); ok {
+		self, err := os.Executable()
+		if err != nil {
+			return "", false
+		}
+		rewritten := self + " run"
+		for _, f := range flags {
+			rewritten += " " + f
+		}
+		rewritten += " -- bash -c " + shellQuote(baseCmd)
+		return rewritten, true
+	}
+
+	return "", false
+}
+
+// rewriteInnerCommand rewrites a user command extracted from eval.
+// Returns the rewritten command and true if a pipe was detected and rewritten.
+func rewriteInnerCommand(inner string) (string, bool) {
+	baseCmd, flags, ok := detectTrailingFilter(inner)
+	if !ok {
+		return "", false
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	rewritten := self + " run"
+	for _, f := range flags {
+		rewritten += " " + f
+	}
+	rewritten += " -- " + baseCmd
+	return rewritten, true
+}
+
+// extractEval finds eval '...' in a command string and returns the inner command,
+// the prefix before eval, and the suffix after it.
+func extractEval(command string) (inner, prefix, suffix string, ok bool) {
+	// Find "eval '" — the start of the eval block
+	evalIdx := strings.Index(command, "eval '")
+	if evalIdx < 0 {
+		return "", "", "", false
+	}
+
+	contentStart := evalIdx + len("eval '")
+
+	// Find the matching closing single quote.
+	// Inside single quotes, there are no escapes in bash — the only way to
+	// include a literal ' is to end the quote, add \', and reopen: 'can'\''t'
+	// But for Claude CLI's use case, the inner command doesn't contain single quotes.
+	closeIdx := strings.Index(command[contentStart:], "'")
+	if closeIdx < 0 {
+		return "", "", "", false
+	}
+	closeIdx += contentStart
+
+	inner = command[contentStart:closeIdx]
+	prefix = command[:evalIdx]
+	suffix = command[closeIdx+1:]
+	return inner, prefix, suffix, true
+}
+
+// shellQuote wraps a string in single quotes for safe shell embedding.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// escapeEvalSingle escapes a string for embedding inside eval '...'.
+// Since single quotes can't contain single quotes in bash, we use the
+// end-quote-escape-reopen pattern: ' → '\''
+func escapeEvalSingle(s string) string {
+	return strings.ReplaceAll(s, "'", "'\\''")
 }
 
 // isTrimoutCommand returns true if the command starts with trimout subcommands.
