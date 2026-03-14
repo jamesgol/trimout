@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -178,6 +179,92 @@ func TestStatsLine(t *testing.T) {
 	if !strings.Contains(s, "filtered from") {
 		t.Errorf("should say filtered: %q", s)
 	}
+}
+
+func TestCanStream(t *testing.T) {
+	tests := []struct {
+		name string
+		opts filterOpts
+		want bool
+	}{
+		{"no filters", filterOpts{}, true},
+		{"head only", filterOpts{head: 10}, true},
+		{"grep only", filterOpts{grep: "foo"}, true},
+		{"dedup", filterOpts{dedup: true}, true},
+		{"strip-ansi", filterOpts{stripAnsi: true}, true},
+		{"compress-blank", filterOpts{compressBlnk: true}, true},
+		{"max-line-len", filterOpts{maxLineLen: 80}, true},
+		{"tail blocks", filterOpts{tail: 10}, false},
+		{"ends blocks", filterOpts{ends: 10}, false},
+		{"mid blocks", filterOpts{mid: 10}, false},
+		{"dedup-all blocks", filterOpts{dedupAll: true}, false},
+		{"stats blocks", filterOpts{stats: true}, false},
+		{"output-jsonl blocks", filterOpts{outputJSONL: "out.jsonl"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := canStream(&tt.opts)
+			if got != tt.want {
+				t.Errorf("canStream() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamFilterPipeline(t *testing.T) {
+	opts := &filterOpts{
+		stripAnsi:  true,
+		dedup:      true,
+		grep:       "ok",
+		maxLineLen: 20,
+	}
+	filters, err := buildStreamFilters(opts, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := []string{
+		"\x1b[32mok test1\x1b[0m",
+		"\x1b[32mok test1\x1b[0m", // dedup
+		"FAIL test2",               // grep filters out
+		"\x1b[31mok a]very long line that should be truncated here\x1b[0m",
+	}
+
+	var got []string
+	for _, line := range lines {
+		out, emit, _ := runStreamFilters(filters, line)
+		if emit {
+			got = append(got, out)
+		}
+	}
+
+	want := []string{
+		"ok test1",
+		"ok a]very long line ...",
+	}
+	assertLines(t, want, got)
+}
+
+func TestStreamHeadFilter(t *testing.T) {
+	opts := &filterOpts{head: 3}
+	filters, err := buildStreamFilters(opts, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for i := 0; i < 10; i++ {
+		line := fmt.Sprintf("line%d", i)
+		out, emit, done := runStreamFilters(filters, line)
+		if emit {
+			got = append(got, out)
+		}
+		if done {
+			break
+		}
+	}
+
+	assertLines(t, []string{"line0", "line1", "line2"}, got)
 }
 
 func assertLines(t *testing.T, want, got []string) {

@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -216,12 +218,34 @@ func outputFiltered(lines []string, opts *filterOpts, originalLines, originalByt
 	fmt.Print(output)
 }
 
+// canStream returns true when all active filters can operate line-by-line.
+func canStream(opts *filterOpts) bool {
+	if opts.tail > 0 || opts.ends > 0 || opts.mid > 0 {
+		return false
+	}
+	if opts.dedupAll || opts.stats {
+		return false
+	}
+	if opts.outputJSONL != "" {
+		return false
+	}
+	return true
+}
+
 func cmdPipe(args []string) {
 	fs := flag.NewFlagSet("trimout", flag.ExitOnError)
 	var opts filterOpts
 	addFilterFlags(fs, &opts)
 	fs.Parse(args)
 
+	if canStream(&opts) {
+		cmdPipeStreaming(&opts)
+	} else {
+		cmdPipeBuffered(&opts)
+	}
+}
+
+func cmdPipeBuffered(opts *filterOpts) {
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "trimout: error reading stdin: %v\n", err)
@@ -233,7 +257,7 @@ func cmdPipe(args []string) {
 
 	// Cache
 	if !opts.noCache {
-		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(&opts)}
+		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(opts)}
 		id, cacheErr := CacheWrite(annotated, len(raw), 0, stdoutLines, 0, meta)
 		if cacheErr != nil {
 			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
@@ -243,7 +267,86 @@ func cmdPipe(args []string) {
 	}
 
 	lines := splitLines(raw)
-	outputFiltered(lines, &opts, stdoutLines, len(raw))
+	outputFiltered(lines, opts, stdoutLines, len(raw))
+}
+
+func cmdPipeStreaming(opts *filterOpts) {
+	compiled, err := loadPatterns(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trimout: %v\n", err)
+		os.Exit(1)
+	}
+
+	filters, err := buildStreamFilters(opts, compiled)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trimout: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Start incremental cache
+	var cw *CacheWriter
+	if !opts.noCache {
+		meta := CacheMeta{Tag: opts.tag, ExitCode: -1, Session: resolveSession(opts)}
+		cw, err = CacheBegin(meta)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", err)
+		}
+	}
+
+	// On signal, finalize cache before exiting
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		if cw != nil {
+			cw.Finalize()
+		}
+		os.Exit(130)
+	}()
+
+	writer := bufio.NewWriter(os.Stdout)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Write unfiltered line to cache
+		if cw != nil {
+			cw.WriteLine(line)
+		}
+
+		if !opts.quiet {
+			out, emit, done := runStreamFilters(filters, line)
+			if emit {
+				writer.WriteString(out)
+				writer.WriteByte('\n')
+			}
+			if done {
+				break
+			}
+		}
+	}
+
+	writer.Flush()
+
+	// If --head stopped us early, drain remaining stdin into cache
+	if cw != nil {
+		for scanner.Scan() {
+			cw.WriteLine(scanner.Text())
+		}
+	}
+
+	// Finalize cache
+	if cw != nil {
+		id, cacheErr := cw.Finalize()
+		if cacheErr != nil {
+			fmt.Fprintf(os.Stderr, "trimout: cache warning: %v\n", cacheErr)
+		} else if opts.verbose {
+			fmt.Fprintf(os.Stderr, "trimout: cached as %s (%d lines, %d bytes)\n",
+				id, cw.StdoutLines(), cw.StdoutBytes())
+		}
+	}
 }
 
 func cmdRun(args []string) {

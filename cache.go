@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"hash"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,6 +248,98 @@ func CacheWrite(annotated []byte, stdoutBytes, stderrBytes int, stdoutLines, std
 	}
 	return id, nil
 }
+
+// CacheWriter supports incremental cache writing for streaming mode.
+type CacheWriter struct {
+	id          string
+	logFile     *os.File
+	logWriter   *bufio.Writer
+	meta        CacheMeta
+	hasher      hash.Hash
+	stdoutBytes int
+	stdoutLines int
+	ts          time.Time
+}
+
+// CacheBegin starts an incremental cache write. Call WriteLine for each line,
+// then Finalize to commit the entry, or Abort to discard it.
+func CacheBegin(meta CacheMeta) (*CacheWriter, error) {
+	if err := ensureCacheDir(); err != nil {
+		return nil, err
+	}
+
+	ts := time.Now().UTC()
+	// Use a temporary ID; the final ID includes the content hash.
+	tmpPath := filepath.Join(cacheDir(), fmt.Sprintf("tmp-%d.log", ts.UnixNano()))
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CacheWriter{
+		logFile:   f,
+		logWriter: bufio.NewWriter(f),
+		meta:      meta,
+		hasher:    sha256.New(),
+		ts:        ts,
+	}, nil
+}
+
+// WriteLine writes a single stdout line to the cache in annotated format.
+func (cw *CacheWriter) WriteLine(line string) {
+	record := fmt.Sprintf("%c\t%s\n", streamOut, line)
+	cw.logWriter.WriteString(record)
+	cw.hasher.Write([]byte(record))
+	cw.stdoutBytes += len(line) + 1
+	cw.stdoutLines++
+}
+
+// Finalize flushes the cache file, generates the final ID, renames the file,
+// and inserts the metadata into the database. Returns the cache ID.
+func (cw *CacheWriter) Finalize() (string, error) {
+	cw.logWriter.Flush()
+	tmpPath := cw.logFile.Name()
+	cw.logFile.Close()
+
+	h := fmt.Sprintf("%x", cw.hasher.Sum(nil)[:8])
+	cw.id = fmt.Sprintf("%s-%s%04d", cw.ts.Format("20060102-150405"), h[:8], cw.ts.Nanosecond()/100000)
+
+	finalPath := filepath.Join(cacheDir(), cw.id+".log")
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+
+	db, err := openDB()
+	if err != nil {
+		os.Remove(finalPath)
+		return "", err
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`INSERT INTO captures (id, timestamp, command, stdout_size, stderr_size, stdout_lines, stderr_lines, hash, tags, exit_code, duration_ms, work_dir, session)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cw.id, cw.ts.Format(time.RFC3339), cw.meta.Command, cw.stdoutBytes, 0, cw.stdoutLines, 0, h, cw.meta.Tag,
+		cw.meta.ExitCode, cw.meta.Duration.Milliseconds(), cw.meta.WorkDir, cw.meta.Session)
+	if err != nil {
+		os.Remove(finalPath)
+		return "", err
+	}
+	return cw.id, nil
+}
+
+// Abort discards the in-progress cache file without committing.
+func (cw *CacheWriter) Abort() {
+	tmpPath := cw.logFile.Name()
+	cw.logFile.Close()
+	os.Remove(tmpPath)
+}
+
+// StdoutLines returns the number of lines written so far.
+func (cw *CacheWriter) StdoutLines() int { return cw.stdoutLines }
+
+// StdoutBytes returns the number of content bytes written so far.
+func (cw *CacheWriter) StdoutBytes() int { return cw.stdoutBytes }
 
 // CacheReadLog reads the annotated log for a given ID (or "last" for the most recent).
 // If session is non-empty, "last" is scoped to that session.

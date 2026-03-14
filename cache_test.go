@@ -266,6 +266,89 @@ func TestCacheGetEntry(t *testing.T) {
 	}
 }
 
+func TestCacheWriter(t *testing.T) {
+	setupTestCache(t)
+
+	meta := CacheMeta{Tag: "stream-test", ExitCode: -1, Session: "s1"}
+	cw, err := CacheBegin(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cw.WriteLine("line1")
+	cw.WriteLine("line2")
+	cw.WriteLine("line3")
+
+	if cw.StdoutLines() != 3 {
+		t.Errorf("expected 3 lines, got %d", cw.StdoutLines())
+	}
+
+	id, err := cw.Finalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty ID")
+	}
+
+	// Read back and verify format matches CacheWrite
+	data, err := CacheReadLog(id, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := DecodeAnnotated(data, streamOut)
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(lines))
+	}
+	if lines[0] != "line1" || lines[2] != "line3" {
+		t.Errorf("unexpected content: %v", lines)
+	}
+
+	// Verify "last" works
+	data, err = CacheReadLog("last", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines = DecodeAnnotated(data, streamOut)
+	if len(lines) != 3 {
+		t.Errorf("last: expected 3 lines, got %d", len(lines))
+	}
+
+	// Verify metadata in DB
+	entry, err := CacheGetEntry(id, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Tags != "stream-test" {
+		t.Errorf("expected tag 'stream-test', got %q", entry.Tags)
+	}
+	if entry.StdoutLines != 3 {
+		t.Errorf("expected 3 stdout lines, got %d", entry.StdoutLines)
+	}
+}
+
+func TestCacheWriterAbort(t *testing.T) {
+	setupTestCache(t)
+
+	meta := CacheMeta{ExitCode: -1}
+	cw, err := CacheBegin(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cw.WriteLine("should be discarded")
+	cw.Abort()
+
+	// No entries should exist
+	entries, err := CacheList(10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries after abort, got %d", len(entries))
+	}
+}
+
 func TestHashContent(t *testing.T) {
 	h1 := hashContent([]byte("hello"))
 	h2 := hashContent([]byte("world"))
