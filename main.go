@@ -55,7 +55,8 @@ type filterOpts struct {
 	showStderr   bool
 	showCombined bool
 	quiet        bool
-	patterns     string
+	inputJSONL  string
+	inputText   string
 	outputJSONL bool
 }
 
@@ -81,7 +82,8 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.showCombined, "combined", false, "Show both stdout and stderr")
 	fs.BoolVar(&opts.quiet, "quiet", false, "Suppress output (run mode: cache only, check exit code)")
 	fs.BoolVar(&opts.quiet, "q", false, "Suppress output (shorthand)")
-	fs.StringVar(&opts.patterns, "patterns", "", "JSONL file of patterns to match against")
+	fs.StringVar(&opts.inputJSONL, "input-jsonl", "", "JSONL pattern file to match against")
+	fs.StringVar(&opts.inputText, "input-text", "", "Plain text pattern file (one literal per line)")
 	fs.BoolVar(&opts.outputJSONL, "output-jsonl", false, "Output pattern matches as JSONL")
 }
 
@@ -109,10 +111,13 @@ func resolveStream(opts *filterOpts, exitCode int) byte {
 }
 
 func loadPatterns(opts *filterOpts) ([]CompiledPattern, error) {
-	if opts.patterns == "" {
-		return nil, nil
+	if opts.inputJSONL != "" {
+		return LoadPatternsJSONL(opts.inputJSONL)
 	}
-	return LoadPatterns(opts.patterns)
+	if opts.inputText != "" {
+		return LoadPatternsText(opts.inputText)
+	}
+	return nil, nil
 }
 
 func applyFilters(lines []string, opts *filterOpts, compiled []CompiledPattern) ([]string, error) {

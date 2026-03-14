@@ -117,7 +117,8 @@ trimout clear [--older-than DURATION]
 | `--stderr` | Show stderr instead of stdout |
 | `--combined` | Show both stdout and stderr |
 | `-q, --quiet` | Suppress output entirely (run mode: cache only) |
-| `--patterns FILE` | JSONL file of patterns to match against (see [Pattern Matching](#pattern-matching)) |
+| `--input-jsonl FILE` | JSONL pattern file to match against (see [Pattern Matching](#pattern-matching)) |
+| `--input-text FILE` | Plain text pattern file, one literal per line (see [Pattern Matching](#pattern-matching)) |
 | `--output-jsonl` | Output pattern matches as JSONL instead of plain text |
 | `--session ID` | Override session ID (default: auto-detect from `.trimout-session`) |
 
@@ -149,14 +150,28 @@ trimout list --last 5
 
 ## Pattern Matching
 
-The `--patterns` flag loads a JSONL file of patterns and filters output to only matching lines. Each line in the pattern file is a JSON object:
+Two input formats are supported:
+
+### Plain text (`--input-text`)
+
+One literal pattern per line. Lines starting with `#` are comments. Simple and quick:
+
+```
+PHPSESSID
+wp-content
+X-Powered-By
+```
+
+Each pattern is matched using `strings.Contains`. The pattern string is used as the id in structured output.
+
+### JSONL (`--input-jsonl`)
+
+One JSON object per line, with full metadata:
 
 ```jsonl
 {"type":"literal","pattern":"PHPSESSID","id":"php","confidence":"confirmed","meta":"cookie"}
 {"type":"regex","pattern":"Server: Apache/[0-9]","id":"apache-httpd","confidence":"confirmed","meta":"header"}
 ```
-
-Fields:
 
 | Field | Description |
 |-------|-------------|
@@ -168,10 +183,12 @@ Fields:
 
 Lines starting with `#` are comments. Blank lines are skipped.
 
-Literals are checked first (fast path), then regexes. Use `--output-jsonl` to get structured match output:
+### Output
+
+Literals are checked first (fast path), then regexes. By default, matching lines are printed as plain text. Use `--output-jsonl` to get structured match output:
 
 ```bash
-curl -s example.com | trimout --patterns fingerprints.jsonl --output-jsonl
+curl -s example.com | trimout --input-jsonl fingerprints.jsonl --output-jsonl
 ```
 
 ```jsonl

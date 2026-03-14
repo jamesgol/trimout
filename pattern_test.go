@@ -23,7 +23,7 @@ func writePatternFile(t *testing.T, lines ...string) string {
 	return path
 }
 
-func TestLoadPatterns(t *testing.T) {
+func TestLoadPatternsJSONL(t *testing.T) {
 	path := writePatternFile(t,
 		`# this is a comment`,
 		``,
@@ -31,7 +31,7 @@ func TestLoadPatterns(t *testing.T) {
 		`{"type":"regex","pattern":"Server: Apache/[0-9]","id":"apache","confidence":"confirmed","meta":"header"}`,
 	)
 
-	patterns, err := LoadPatterns(path)
+	patterns, err := LoadPatternsJSONL(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,21 +54,54 @@ func TestLoadPatterns(t *testing.T) {
 	}
 }
 
-func TestLoadPatternsInvalidRegex(t *testing.T) {
+func TestLoadPatternsJSONLInvalidRegex(t *testing.T) {
 	path := writePatternFile(t,
 		`{"type":"regex","pattern":"[invalid","id":"bad","confidence":"weak","meta":""}`,
 	)
-	_, err := LoadPatterns(path)
+	_, err := LoadPatternsJSONL(path)
 	if err == nil {
 		t.Error("expected error for invalid regex")
 	}
 }
 
-func TestLoadPatternsInvalidJSON(t *testing.T) {
+func TestLoadPatternsJSONLInvalidJSON(t *testing.T) {
 	path := writePatternFile(t, `not json`)
-	_, err := LoadPatterns(path)
+	_, err := LoadPatternsJSONL(path)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestLoadPatternsText(t *testing.T) {
+	path := writePatternFile(t,
+		`# comment line`,
+		``,
+		`PHPSESSID`,
+		`wp-content`,
+	)
+
+	patterns, err := LoadPatternsText(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patterns) != 2 {
+		t.Fatalf("expected 2 patterns, got %d", len(patterns))
+	}
+
+	if patterns[0].Entry.Pattern != "PHPSESSID" {
+		t.Errorf("expected pattern 'PHPSESSID', got %q", patterns[0].Entry.Pattern)
+	}
+	if patterns[0].Entry.ID != "PHPSESSID" {
+		t.Errorf("expected id to match pattern, got %q", patterns[0].Entry.ID)
+	}
+	if patterns[0].Entry.Type != "literal" {
+		t.Errorf("expected type 'literal', got %q", patterns[0].Entry.Type)
+	}
+	if patterns[0].Entry.Confidence != "confirmed" {
+		t.Errorf("expected confidence 'confirmed', got %q", patterns[0].Entry.Confidence)
+	}
+	if patterns[1].Entry.Pattern != "wp-content" {
+		t.Errorf("expected pattern 'wp-content', got %q", patterns[1].Entry.Pattern)
 	}
 }
 

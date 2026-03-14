@@ -33,8 +33,8 @@ type PatternMatch struct {
 	Meta       string `json:"meta"`
 }
 
-// LoadPatterns reads a JSONL pattern file and compiles all entries.
-func LoadPatterns(path string) ([]CompiledPattern, error) {
+// LoadPatternsJSONL reads a JSONL pattern file and compiles all entries.
+func LoadPatternsJSONL(path string) ([]CompiledPattern, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open pattern file: %w", err)
@@ -65,6 +65,38 @@ func LoadPatterns(path string) ([]CompiledPattern, error) {
 			cp.Re = re
 		}
 		patterns = append(patterns, cp)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading pattern file: %w", err)
+	}
+	return patterns, nil
+}
+
+// LoadPatternsText reads a plain text pattern file (one literal pattern per line).
+// Lines starting with # are comments. Blank lines are skipped.
+// Each pattern becomes a literal match with the pattern string as the id.
+func LoadPatternsText(path string) ([]CompiledPattern, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open pattern file: %w", err)
+	}
+	defer f.Close()
+
+	var patterns []CompiledPattern
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		patterns = append(patterns, CompiledPattern{
+			Entry: PatternEntry{
+				Type:       "literal",
+				Pattern:    line,
+				ID:         line,
+				Confidence: "confirmed",
+			},
+		})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading pattern file: %w", err)
