@@ -60,7 +60,7 @@ This makes `trimout` ideal for:
 ## Install
 
 ```bash
-go install github.com/james/trimout@latest
+go install github.com/jamesgol/trimout@latest
 ```
 
 Or build from source:

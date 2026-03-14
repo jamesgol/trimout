@@ -1,4 +1,4 @@
-module github.com/james/trimout
+module github.com/jamesgol/trimout
 
 go 1.25.7
 
