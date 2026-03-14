@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -54,6 +55,8 @@ type filterOpts struct {
 	showStderr   bool
 	showCombined bool
 	quiet        bool
+	patterns     string
+	patternsJSON bool
 }
 
 func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
@@ -78,6 +81,8 @@ func addFilterFlags(fs *flag.FlagSet, opts *filterOpts) {
 	fs.BoolVar(&opts.showCombined, "combined", false, "Show both stdout and stderr")
 	fs.BoolVar(&opts.quiet, "quiet", false, "Suppress output (run mode: cache only, check exit code)")
 	fs.BoolVar(&opts.quiet, "q", false, "Suppress output (shorthand)")
+	fs.StringVar(&opts.patterns, "patterns", "", "JSONL file of patterns to match against")
+	fs.BoolVar(&opts.patternsJSON, "patterns-json", false, "Output pattern matches as JSON")
 }
 
 // resolveSession returns the session ID from the flag or auto-detection.
@@ -103,7 +108,14 @@ func resolveStream(opts *filterOpts, exitCode int) byte {
 	return streamOut
 }
 
-func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
+func loadPatterns(opts *filterOpts) ([]CompiledPattern, error) {
+	if opts.patterns == "" {
+		return nil, nil
+	}
+	return LoadPatterns(opts.patterns)
+}
+
+func applyFilters(lines []string, opts *filterOpts, compiled []CompiledPattern) ([]string, error) {
 	if opts.stripAnsi {
 		lines = FilterStripAnsi(lines)
 	}
@@ -127,6 +139,9 @@ func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
 			return nil, err
 		}
 	}
+	if compiled != nil {
+		lines = FilterPatterns(lines, compiled)
+	}
 	if opts.compressBlnk {
 		lines = FilterCompressBlank(lines)
 	}
@@ -146,7 +161,22 @@ func applyFilters(lines []string, opts *filterOpts) ([]string, error) {
 }
 
 func outputFiltered(lines []string, opts *filterOpts, originalLines, originalBytes int) {
-	filtered, err := applyFilters(lines, opts)
+	compiled, err := loadPatterns(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "recap: %v\n", err)
+		os.Exit(1)
+	}
+
+	if opts.patternsJSON && compiled != nil {
+		matches := MatchAll(lines, compiled)
+		enc := json.NewEncoder(os.Stdout)
+		for _, m := range matches {
+			enc.Encode(m)
+		}
+		return
+	}
+
+	filtered, err := applyFilters(lines, opts, compiled)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "recap: %v\n", err)
 		os.Exit(1)
